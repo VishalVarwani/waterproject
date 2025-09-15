@@ -57,9 +57,9 @@ export default function Login() {
             <div className="brand-badge">● SWIM Platform • Secure by design</div>
 
             <div className="brand-kpis">
-              <div className="kpi"><h4>Uptime</h4><div className="kpi-v">99.98%</div></div>
-              <div className="kpi"><h4>Data Points</h4><div className="kpi-v">12.6M</div></div>
-              <div className="kpi"><h4>Lakes & Rivers</h4><div className="kpi-v">184</div></div>
+              <div className="kpi"><h2 style={{fontSize: "20px"}}>Harmonize Data</h2> <div class="kpi-v">~96%+ accuracy*</div> </div>
+              <div className="kpi"><h2 style={{fontSize: "20px"}}>Detect Anomalies</h2> <div class="kpi-v">~92% precision*</div> </div>
+              <div className="kpi"><h2 style={{fontSize: "20px"}}>lakes/rivers</h2><div class="kpi-v">20+</div></div>
             </div>
           </div>
         </section>

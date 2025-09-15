@@ -2,12 +2,13 @@
 
 .login {
   position: relative;
-  min-height: calc(100vh - 0px);
+  min-height: calc(10vh - 90px) !important;
   background:
     radial-gradient(1200px 700px at 15% -10%, color-mix(in oklab, var(--primary) 18%, transparent), transparent 55%) no-repeat,
     radial-gradient(800px 500px at 85% 110%, color-mix(in oklab, var(--primary) 12%, transparent), transparent 60%) no-repeat,
     var(--bg);
   overflow: hidden;
+  margin-top: 200px
 }
 
 .login-orb {
@@ -89,8 +90,8 @@
   background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
   border: 1px solid var(--border);
 }
-.kpi h4 { margin: 0 0 6px 0; font-size: 12px; color: var(--muted); letter-spacing: .3px; }
-.kpi-v { font-size: 22px; font-weight: 800; }
+.kpi h2 { margin: 0 0 6px 0; font-size: 12px; color: var(--muted); letter-spacing: .3px; }
+.kpi-v { font-size: 15px; font-weight: 800; }
 
 /* Auth (right) */
 .login-auth {
