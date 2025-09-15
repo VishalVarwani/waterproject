@@ -132,6 +132,7 @@ export default function App() {
             timestamp: r.ts,
             sampling_point_id: r.sampling_point || '',
             parameter: parameterCode,
+            parameter_display: r.parameter_display || r.parameter,
             value: r.value,
             unit: r.unit ?? '',
             lat: r.lat ?? null,
@@ -237,6 +238,13 @@ export default function App() {
       return m
     })
   }, [rawRows, tempUnit])
+const paramNameByCode = useMemo(() => {
+  const map = {}
+  for (const r of rawRows) {
+    if (r.parameter && r.parameter_display) map[r.parameter] = r.parameter_display
+  }
+  return map
+}, [rawRows])
 
   const lastUpdated = useMemo(() => {
     if (!rawRows.length) return null
@@ -400,7 +408,7 @@ export default function App() {
                         aria-label="Primary parameter for sampling point cards"
                       >
                         {availableParams.map(p => (
-                          <option key={p} value={p}>{p}</option>
+                          <option key={p} value={p}>{paramNameByCode[p] || p}</option>
                         ))}
                       </select>
                     </div>
