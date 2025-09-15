@@ -14,7 +14,7 @@ import MapView from './components/MapView.jsx'
 import { convertTemperature, acceptableRanges, toLocalISODate } from './utils/formatters.js'
 import Talk2Csv from './pages/Talk2Csv.jsx'
 
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import Analytics from './pages/Analytics.jsx'
 import Login from './pages/Login.jsx'
 import { FiltersContext } from './utils/filtersContext.js'
@@ -30,29 +30,45 @@ import { api } from './utils/api'
 
 const SHOW_MAP = true
 
+// Simple protected-route wrapper
+function ProtectedRoute({ user, children }) {
+  const location = useLocation()
+  if (!user) return <Navigate to="/login" state={{ from: location.pathname }} replace />
+  return children
+}
+
 export default function App() {
-  // --- Auth state (persisted)
+  // --- Auth state (SESSION-based; clears on tab close/reload)
   const [user, setUser] = useState(() => {
     try {
-      const raw = localStorage.getItem('auth_user')
+      const raw = sessionStorage.getItem('auth_user')
       return raw ? JSON.parse(raw) : null
     } catch { return null }
   })
   const login = (u) => {
     setUser(u)
-    try { localStorage.setItem('auth_user', JSON.stringify(u)) } catch {}
+    try { sessionStorage.setItem('auth_user', JSON.stringify(u)) } catch {}
   }
   const logout = () => {
     setUser(null)
-    try { localStorage.removeItem('auth_user') } catch {}
+    try { sessionStorage.removeItem('auth_user') } catch {}
     if (window.location.pathname !== '/login') {
       window.location.assign('/login')
     }
   }
 
+  // also clear on unload to be strict
+  useEffect(() => {
+    const handleUnload = () => {
+      try { sessionStorage.removeItem('auth_user') } catch {}
+    }
+    window.addEventListener('beforeunload', handleUnload)
+    return () => window.removeEventListener('beforeunload', handleUnload)
+  }, [])
+
   // --- API-backed dataset + rows ---
   const [datasets, setDatasets] = useState([])
-  const [datasetId, setDatasetId] = useState(() => localStorage.getItem('datasetId') || '')
+  const [datasetId, setDatasetId] = useState(() => sessionStorage.getItem('datasetId') || '')
   const [rawRows, setRawRows] = useState([]) // flat rows from /measurements
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -90,9 +106,9 @@ export default function App() {
     return () => { cancelled = true }
   }, [user?.client_id])
 
-  // Persist chosen dataset id
+  // Persist chosen dataset id (SESSION)
   useEffect(() => {
-    if (datasetId) localStorage.setItem('datasetId', datasetId)
+    if (datasetId) sessionStorage.setItem('datasetId', datasetId)
   }, [datasetId])
 
   // Load measurements for selected dataset
@@ -339,131 +355,138 @@ export default function App() {
     <div className="page page--center" role="alert">{error}</div>
   ) : (
     <Routes>
+      {/* Public */}
+      <Route path="/login" element={<Login />} />
+
+      {/* Protected */}
       <Route
         path="/"
         element={
-          <div className="layout">
-            <aside className="filters-panel" aria-label="Filters">
-              <Filters
-                samplingPoints={samplingPointsList}
-                parameters={availableParams}
-                dateFrom={dateFrom}
-                dateTo={dateTo}
-                onDateFrom={setDateFrom}
-                onDateTo={setDateTo}
-                selectedPoints={selectedPoints}
-                setSelectedPoints={setSelectedPoints}
-                selectedParams={selectedParams}
-                setSelectedParams={setSelectedParams}
-                tempUnit={tempUnit}
-                setTempUnit={setTempUnit}
-                onReset={onResetFilters}
-              />
-              {datasetToolbar}
-            </aside>
-
-            <main className="content" aria-live="polite">
-              <KpiStrip kpis={kpis} />
-              <AlgaeBloomWatch />
-
-              <section className="section">
-                <div className="section__header">
-                  <h2 className="section__title">Time Series</h2>
-                  <div className="section__controls">
-                    <label className="label" htmlFor="primaryParam">Primary parameter:</label>
-                    <select
-                      id="primaryParam"
-                      className="select"
-                      value={primaryParam}
-                      onChange={e => setPrimaryParam(e.target.value)}
-                      aria-label="Primary parameter for sampling point cards"
-                    >
-                      {availableParams.map(p => (
-                        <option key={p} value={p}>{p}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <TimeSeriesChart
-                  seriesByParam={seriesByParam}
+          <ProtectedRoute user={user}>
+            <div className="layout">
+              <aside className="filters-panel" aria-label="Filters">
+                <Filters
+                  samplingPoints={samplingPointsList}
+                  parameters={availableParams}
+                  dateFrom={dateFrom}
+                  dateTo={dateTo}
+                  onDateFrom={setDateFrom}
+                  onDateTo={setDateTo}
+                  selectedPoints={selectedPoints}
+                  setSelectedPoints={setSelectedPoints}
+                  selectedParams={selectedParams}
+                  setSelectedParams={setSelectedParams}
                   tempUnit={tempUnit}
-                  focusParam={primaryParam}
+                  setTempUnit={setTempUnit}
+                  onReset={onResetFilters}
                 />
-              </section>
+                {datasetToolbar}
+              </aside>
 
-              <section className="section">
-                <h2 className="section__title">Sampling Points</h2>
-                <div className="card-grid">
-                  {samplingPointsList.map(sp => {
-                    const stats = statsByPointAll[sp.id]
-                    const latest = unfilteredMeasurements
-                      .filter(m => m.sampling_point_id === sp.id && m.parameter === primaryParam && m.value != null)
-                      .sort((a,b)=> new Date(b.timestamp) - new Date(a.timestamp))[0]
+              <main className="content" aria-live="polite">
+                <KpiStrip kpis={kpis} />
+                <AlgaeBloomWatch />
 
-                    // safety from 4 bloom params (worst wins)
-                    const rank = { alert: 3, watch: 2, ok: 1, na: 0 }
-                    let worst = { level: 'na', code: null, msg: '—' }
-                    for (const code of BLOOM_CODES) {
-                      const last = latestForPointAndParam(unfilteredMeasurements, sp.id, code)
-                      const lvl  = pickLevelByCode(code, last?.value)
-                      if (rank[lvl.level] > rank[worst.level]) worst = { level: lvl.level, code, msg: lvl.msg }
-                    }
-                    const safety = levelToSafety(worst.level)
-                    const safetyHint = worst.code ? `${worst.code} · ${worst.msg}` : 'No recent readings'
-
-                    return (
-                      <SamplingPointCard
-                        key={sp.id}
-                        name={sp.name}
-                        pointId={sp.id}
-                        stats={stats}
-                        latest={latest}
-                        unit={
-                          latest
-                            ? latest.unit
-                            : (primaryParam === 'temperature'
-                                  ? (tempUnit === 'C' ? '°C' : '°F')
-                                  : acceptableRanges[primaryParam]?.unit || '')
-                        }
-                        onClick={() => handleSelectPoint(sp.id)}
-                        safety={safety}
-                        safetyHint={safetyHint}
-                      />
-                    )
-                  })}
-                  
-                </div>
-              </section>
-
-              {SHOW_MAP && (
                 <section className="section">
-                  <h2 className="section__title">Map</h2>
-                  <MapView
-                    points={samplingPointsList}
-                    onSelectPoint={handleSelectPoint}
+                  <div className="section__header">
+                    <h2 className="section__title">Time Series</h2>
+                    <div className="section__controls">
+                      <label className="label" htmlFor="primaryParam">Primary parameter:</label>
+                      <select
+                        id="primaryParam"
+                        className="select"
+                        value={primaryParam}
+                        onChange={e => setPrimaryParam(e.target.value)}
+                        aria-label="Primary parameter for sampling point cards"
+                      >
+                        {availableParams.map(p => (
+                          <option key={p} value={p}>{p}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <TimeSeriesChart
+                    seriesByParam={seriesByParam}
+                    tempUnit={tempUnit}
+                    focusParam={primaryParam}
                   />
                 </section>
-              )}
 
-              <section className="section">
-                <h2 className="section__title">Measurements Table</h2>
-                <ParameterTable
-                  measurements={filteredMeasurements}
-                  spById={spById}
-                />
-              </section>
-            </main>
-          </div>
+                <section className="section">
+                  <h2 className="section__title">Sampling Points</h2>
+                  <div className="card-grid">
+                    {samplingPointsList.map(sp => {
+                      const stats = statsByPointAll[sp.id]
+                      const latest = unfilteredMeasurements
+                        .filter(m => m.sampling_point_id === sp.id && m.parameter === primaryParam && m.value != null)
+                        .sort((a,b)=> new Date(b.timestamp) - new Date(a.timestamp))[0]
+
+                      // safety from 4 bloom params (worst wins)
+                      const rank = { alert: 3, watch: 2, ok: 1, na: 0 }
+                      let worst = { level: 'na', code: null, msg: '—' }
+                      for (const code of BLOOM_CODES) {
+                        const last = latestForPointAndParam(unfilteredMeasurements, sp.id, code)
+                        const lvl  = pickLevelByCode(code, last?.value)
+                        if (rank[lvl.level] > rank[worst.level]) worst = { level: lvl.level, code, msg: lvl.msg }
+                      }
+                      const safety = levelToSafety(worst.level)
+                      const safetyHint = worst.code ? `${worst.code} · ${worst.msg}` : 'No recent readings'
+
+                      return (
+                        <SamplingPointCard
+                          key={sp.id}
+                          name={sp.name}
+                          pointId={sp.id}
+                          stats={stats}
+                          latest={latest}
+                          unit={
+                            latest
+                              ? latest.unit
+                              : (primaryParam === 'temperature'
+                                    ? (tempUnit === 'C' ? '°C' : '°F')
+                                    : acceptableRanges[primaryParam]?.unit || '')
+                          }
+                          onClick={() => handleSelectPoint(sp.id)}
+                          safety={safety}
+                          safetyHint={safetyHint}
+                        />
+                      )
+                    })}
+                    
+                  </div>
+                </section>
+
+                {SHOW_MAP && (
+                  <section className="section">
+                    <h2 className="section__title">Map</h2>
+                    <MapView
+                      points={samplingPointsList}
+                      onSelectPoint={handleSelectPoint}
+                    />
+                  </section>
+                )}
+
+                <section className="section">
+                  <h2 className="section__title">Measurements Table</h2>
+                  <ParameterTable
+                    measurements={filteredMeasurements}
+                    spById={spById}
+                  />
+                </section>
+              </main>
+            </div>
+          </ProtectedRoute>
         }
       />
-      <Route path="/analytics" element={<Analytics />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/ingestion" element={<Ingestion />} />
-      <Route path="/datasets" element={<Datasets />} />
-      <Route path="/parameters" element={<Parameters />} />
-      <Route path="/talk2csv" element={<Talk2Csv />} />
+      <Route path="/analytics" element={<ProtectedRoute user={user}><Analytics /></ProtectedRoute>} />
+      <Route path="/ingestion" element={<ProtectedRoute user={user}><Ingestion /></ProtectedRoute>} />
+      <Route path="/datasets" element={<ProtectedRoute user={user}><Datasets /></ProtectedRoute>} />
+      <Route path="/parameters" element={<ProtectedRoute user={user}><Parameters /></ProtectedRoute>} />
+      <Route path="/talk2csv" element={<ProtectedRoute user={user}><Talk2Csv /></ProtectedRoute>} />
 
+      {/* fallback: go to login if unauth, else dashboard */}
+      <Route path="*" element={user ? <Navigate to="/" replace /> : <Navigate to="/login" replace />} />
     </Routes>
   )
 
@@ -471,12 +494,15 @@ export default function App() {
     <AuthContext.Provider value={{ user, login, logout }}>
       <FiltersContext.Provider value={ctxValue}>
         <div className="page">
-          <Header
-            title="Physical Water-Quality Monitoring"
-            lastUpdated={lastUpdated ? toLocalISODate(lastUpdated) : null}
-            darkMode={darkMode}
-            onToggleDark={() => setDarkMode(d => !d)}
-          />
+          {/* Hide header until logged in */}
+          {user && (
+            <Header
+              title="Physical Water-Quality Monitoring"
+              lastUpdated={lastUpdated ? toLocalISODate(lastUpdated) : null}
+              darkMode={darkMode}
+              onToggleDark={() => setDarkMode(d => !d)}
+            />
+          )}
           {content}
         </div>
       </FiltersContext.Provider>
