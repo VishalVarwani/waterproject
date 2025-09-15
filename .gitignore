@@ -1,0 +1,5 @@
+node_modules
+dist
+.env*
+server/__pycache__/
+server/.env
