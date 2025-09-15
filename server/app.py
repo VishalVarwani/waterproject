@@ -513,23 +513,23 @@ def measurements():
         # ✨ NEW: include quality_flag_id and sp.lat/lon
         sql = f"""
             SELECT
-              m.ts,                           -- 0
-              COALESCE(sp.code,''),           -- 1
-              p.code,                         -- 2
-              CASE
-                WHEN lower(p.code) = 'ph' THEN 'pH'
+            m.ts,                                 -- 0
+            COALESCE(sp.code,'')        AS spcode,-- 1
+            p.code                      AS pcode, -- 2
+            CASE
+                WHEN lower(p.code) = 'ph'  THEN 'pH'
                 WHEN lower(p.code) = 'toc' THEN 'TOC'
-                ELSE AS p.display_name  -- 3
-              END,
-              m.value,                        -- 4
-              COALESCE(m.unit,p.standard_unit), -- 5
-              m.quality_flag_id,              -- 6
-              sp.lat,                         -- 7
-              sp.lon                          -- 8
-            FROM public.measurements m
-            JOIN public.parameters p ON p.parameter_id = m.parameter_id
-            LEFT JOIN public.sampling_points sp ON sp.sampling_point_id = m.sampling_point_id
-            WHERE {' AND '.join(where)}
+                ELSE p.display_name
+            END                           AS parameter_display,  -- 3
+            m.value,                                 -- 4
+            COALESCE(m.unit, p.standard_unit) AS unit,          -- 5
+            m.quality_flag_id,                            -- 6
+            sp.lat,                                       -- 7
+            sp.lon                                        -- 8
+            FROM public.measurements AS m
+            JOIN public.parameters  AS p  ON p.parameter_id = m.parameter_id
+            LEFT JOIN public.sampling_points AS sp ON sp.sampling_point_id = m.sampling_point_id
+            WHERE { ' AND '.join(where) }
             ORDER BY m.ts NULLS LAST
             LIMIT 50000
         """
