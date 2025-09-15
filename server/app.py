@@ -516,11 +516,16 @@ def measurements():
               m.ts,                           -- 0
               COALESCE(sp.code,''),           -- 1
               p.code,                         -- 2
-              m.value,                        -- 3
-              COALESCE(m.unit,p.standard_unit), -- 4
-              m.quality_flag_id,              -- 5
-              sp.lat,                         -- 6
-              sp.lon                          -- 7
+              CASE
+                WHEN lower(p.code) = "ph" THEN 'pH'
+                WHEN lower(p.code) = "toc" THEN 'TOC'
+                ELSE p.display_name  -- 3
+              END,
+              m.value,                        -- 4
+              COALESCE(m.unit,p.standard_unit), -- 5
+              m.quality_flag_id,              -- 6
+              sp.lat,                         -- 7
+              sp.lon                          -- 8
             FROM public.measurements m
             JOIN public.parameters p ON p.parameter_id = m.parameter_id
             LEFT JOIN public.sampling_points sp ON sp.sampling_point_id = m.sampling_point_id
@@ -538,11 +543,12 @@ def measurements():
             "ts": (r[0].isoformat() if r[0] else None),
             "sampling_point": r[1],
             "parameter": r[2],
-            "value": None if r[3] is None else float(r[3]),
-            "unit": r[4],
-            "quality_flag_id": r[5],
-            "lat": None if r[6] is None else float(r[6]),
-            "lon": None if r[7] is None else float(r[7]),
+            "parameter_display": r[3],
+            "value": None if r[4] is None else float(r[4]),
+            "unit": r[5],
+            "quality_flag_id": r[6],
+            "lat": None if r[7] is None else float(r[7]),
+            "lon": None if r[8] is None else float(r[8]),
         } for r in rows]
 
         return jsonify({"data": data})
