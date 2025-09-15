@@ -1,0 +1,39 @@
+{
+  "sampling_points": [
+    { "id": "SP-001", "name": "Lake North", "lat": 49.41, "lon": 8.72 },
+    { "id": "SP-002", "name": "River East", "lat": 49.43, "lon": 8.68 },
+    { "id": "SP-003", "name": "Canal West", "lat": 49.40, "lon": 8.70 },
+    { "id": "SP-004", "name": "Reservoir South", "lat": 49.42, "lon": 8.71 }
+  ],
+  "measurements": [
+    { "timestamp": "2025-08-01T08:00:00Z", "sampling_point_id": "SP-001", "parameter": "temperature", "value": 19.4, "unit": "°C", "flag": "ok" },
+    { "timestamp": "2025-08-01T08:00:00Z", "sampling_point_id": "SP-001", "parameter": "ph", "value": 7.6, "unit": "", "flag": "ok" },
+    { "timestamp": "2025-08-01T08:00:00Z", "sampling_point_id": "SP-001", "parameter": "dissolved_oxygen", "value": 7.8, "unit": "mg/L", "flag": "ok" },
+    { "timestamp": "2025-08-01T08:00:00Z", "sampling_point_id": "SP-001", "parameter": "turbidity", "value": 2.1, "unit": "NTU", "flag": "ok" },
+    { "timestamp": "2025-08-01T08:00:00Z", "sampling_point_id": "SP-001", "parameter": "nitrate", "value": 3.2, "unit": "mg/L", "flag": "ok" },
+
+    { "timestamp": "2025-08-05T08:00:00Z", "sampling_point_id": "SP-002", "parameter": "temperature", "value": 21.0, "unit": "°C", "flag": "ok" },
+    { "timestamp": "2025-08-05T08:00:00Z", "sampling_point_id": "SP-002", "parameter": "ph", "value": 6.3, "unit": "", "flag": "warn" },
+    { "timestamp": "2025-08-05T08:00:00Z", "sampling_point_id": "SP-002", "parameter": "dissolved_oxygen", "value": 4.4, "unit": "mg/L", "flag": "warn" },
+    { "timestamp": "2025-08-05T08:00:00Z", "sampling_point_id": "SP-002", "parameter": "turbidity", "value": 6.3, "unit": "NTU", "flag": "outlier" },
+    { "timestamp": "2025-08-05T08:00:00Z", "sampling_point_id": "SP-002", "parameter": "nitrate", "value": 8.1, "unit": "mg/L", "flag": "ok" },
+
+    { "timestamp": "2025-08-10T08:00:00Z", "sampling_point_id": "SP-003", "parameter": "temperature", "value": 68.0, "unit": "°F", "flag": "ok" },
+    { "timestamp": "2025-08-10T08:00:00Z", "sampling_point_id": "SP-003", "parameter": "ph", "value": 9.2, "unit": "", "flag": "warn" },
+    { "timestamp": "2025-08-10T08:00:00Z", "sampling_point_id": "SP-003", "parameter": "dissolved_oxygen", "value": 6.0, "unit": "mg/L", "flag": "ok" },
+    { "timestamp": "2025-08-10T08:00:00Z", "sampling_point_id": "SP-003", "parameter": "turbidity", "value": 1.1, "unit": "NTU", "flag": "ok" },
+    { "timestamp": "2025-08-10T08:00:00Z", "sampling_point_id": "SP-003", "parameter": "nitrate", "value": 2.4, "unit": "mg/L", "flag": "ok" },
+
+    { "timestamp": "2025-08-15T08:00:00Z", "sampling_point_id": "SP-004", "parameter": "temperature", "value": 24.5, "unit": "°C", "flag": "ok" },
+    { "timestamp": "2025-08-15T08:00:00Z", "sampling_point_id": "SP-004", "parameter": "ph", "value": 7.1, "unit": "", "flag": "ok" },
+    { "timestamp": "2025-08-15T08:00:00Z", "sampling_point_id": "SP-004", "parameter": "dissolved_oxygen", "value": 5.2, "unit": "mg/L", "flag": "ok" },
+    { "timestamp": "2025-08-15T08:00:00Z", "sampling_point_id": "SP-004", "parameter": "turbidity", "value": 4.8, "unit": "NTU", "flag": "ok" },
+    { "timestamp": "2025-08-15T08:00:00Z", "sampling_point_id": "SP-004", "parameter": "nitrate", "value": 11.2, "unit": "mg/L", "flag": "warn" },
+
+    { "timestamp": "2025-09-01T08:00:00Z", "sampling_point_id": "SP-001", "parameter": "temperature", "value": 20.2, "unit": "°C", "flag": "ok" },
+    { "timestamp": "2025-09-01T08:00:00Z", "sampling_point_id": "SP-001", "parameter": "ph", "value": 7.4, "unit": "", "flag": "ok" },
+    { "timestamp": "2025-09-01T08:00:00Z", "sampling_point_id": "SP-002", "parameter": "turbidity", "value": 5.4, "unit": "NTU", "flag": "warn" },
+    { "timestamp": "2025-09-01T08:00:00Z", "sampling_point_id": "SP-003", "parameter": "dissolved_oxygen", "value": 4.8, "unit": "mg/L", "flag": "warn" },
+    { "timestamp": "2025-09-01T08:00:00Z", "sampling_point_id": "SP-004", "parameter": "nitrate", "value": 3.6, "unit": "mg/L", "flag": "ok" }
+  ]
+}

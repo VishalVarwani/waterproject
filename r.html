@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>e.wai — Sign in</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --bg:#0b1220;            /* deep navy */
+    --panel:#121a2b;         /* card */
+    --panel-2:#0e1626;       /* alt */
+    --accent:#70d7ff;        /* cyan */
+    --accent-2:#8ae6c5;      /* mint */
+    --danger:#ff6b8a;
+    --muted:#8b95ad;
+    --text:#eaf0ff;
+    --shadow: 0 20px 60px rgba(0,0,0,.45);
+    --radius: 18px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; font-family:Inter,system-ui,Segoe UI,Roboto,Arial;
+    color:var(--text);
+    background:
+      radial-gradient(1200px 700px at 15% -10%, #162740 0%, transparent 55%) no-repeat,
+      radial-gradient(800px 500px at 85% 110%, #162740 0%, transparent 60%) no-repeat,
+      var(--bg);
+    overflow:hidden;
+  }
+  /* Subtle animated orbs */
+  .orb{
+    position:fixed; inset:auto; width:520px; height:520px; border-radius:50%;
+    filter:blur(60px); opacity:.25; z-index:0; pointer-events:none;
+    background: conic-gradient(from 120deg, #70d7ff, #8ae6c5, #70d7ff);
+    animation: float 18s ease-in-out infinite alternate;
+  }
+  .orb.o1{ top:-180px; left:-140px; transform:scale(.9) }
+  .orb.o2{ bottom:-220px; right:-160px; animation-delay: 1.2s; transform:scale(.8) }
+  @keyframes float{
+    to{ transform: translateY(40px) translateX(20px) scale(1) rotate(6deg) }
+  }
+
+  .wrap{
+    position:relative; z-index:1; height:100%;
+    display:grid; grid-template-columns: 1.1fr 1fr; gap:0;
+  }
+  @media (max-width:980px){ .wrap{ grid-template-columns: 1fr } }
+
+  /* Left side — brand */
+  .brand-side{
+    display:flex; align-items:center; justify-content:center; padding:40px;
+  }
+  .brand-card{
+    width:min(720px, 92%); padding:36px; border-radius: var(--radius);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02)),
+      var(--panel);
+    border:1px solid rgba(255,255,255,.08);
+    box-shadow: var(--shadow);
+    position:relative; overflow:hidden;
+  }
+  .brand-head{
+    display:flex; align-items:center; gap:12px; margin-bottom:8px;
+    letter-spacing:.3px;
+  }
+  .logo-dot{
+    width:12px; height:12px; border-radius:50%;
+    background: radial-gradient(circle at 30% 30%, #fff, #70d7ff 35%, #0ea5b1 100%);
+    box-shadow: 0 0 18px rgba(112,215,255,.8);
+  }
+  .brand-title{ font-weight:800; font-size:20px }
+  .brand-big{
+    font-size:36px; font-weight:800; line-height:1.1; margin:14px 0 12px 0;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .brand-sub{ color:var(--muted) }
+  .badge{
+    display:inline-flex; gap:8px; align-items:center;
+    padding:8px 12px; border:1px solid rgba(255,255,255,.1);
+    background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+    border-radius:12px; color:#a7f3d0; font-weight:600; font-size:12px; margin-top:16px;
+  }
+  .grid-kpis{
+    display:grid; gap:12px; grid-template-columns: repeat(3,1fr); margin-top:18px;
+  }
+  .kpi{
+    padding:14px; border-radius:14px;
+    background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+    border:1px solid rgba(255,255,255,.08);
+  }
+  .kpi h4{ margin:0 0 6px 0; font-size:12px; color:var(--muted); letter-spacing:.3px }
+  .kpi .v{ font-size:22px; font-weight:800 }
+
+  /* Right side — auth */
+  .auth-side{
+    display:flex; align-items:center; justify-content:center; padding:40px;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.01)),
+      var(--panel-2);
+    border-left:1px solid rgba(255,255,255,.06);
+  }
+  .auth-card{
+    width:min(440px, 92%); padding:28px; border-radius: var(--radius);
+    background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)), var(--panel);
+    border:1px solid rgba(255,255,255,.08);
+    box-shadow: var(--shadow);
+  }
+  .auth-head{
+    display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;
+  }
+  .auth-head .brand-mini{
+    display:flex; align-items:center; gap:10px; font-weight:800;
+  }
+  .muted{ color:var(--muted) }
+  form{ margin-top:8px }
+  label{ display:block; font-size:12px; color:var(--muted); margin-bottom:6px; letter-spacing:.3px }
+  .field{
+    position:relative; margin-bottom:14px;
+  }
+  input[type="email"], input[type="password"]{
+    width:100%; padding:12px 44px 12px 12px;
+    color:var(--text); background:#0f1728; border:1px solid rgba(255,255,255,.12);
+    border-radius:12px; outline:none; transition:border .15s ease, box-shadow .15s ease;
+  }
+  input:focus{ border-color:var(--accent); box-shadow: 0 0 0 4px rgba(112,215,255,.15) }
+  .toggle{
+    position:absolute; top:50%; right:10px; transform:translateY(-50%);
+    padding:6px 10px; border-radius:10px; border:1px solid rgba(255,255,255,.08);
+    background:rgba(255,255,255,.03); color:var(--muted); cursor:pointer; font-size:12px;
+  }
+  .row{
+    display:flex; align-items:center; justify-content:space-between; gap:12px; margin:8px 0 16px;
+  }
+  .row a{ color:var(--accent); text-decoration:none }
+  .btn{
+    width:100%; padding:12px 14px; border-radius:12px; border:none; cursor:pointer;
+    background: linear-gradient(180deg, var(--accent), #86e0ff);
+    color:#082235; font-weight:800; letter-spacing:.3px; box-shadow:0 8px 24px rgba(112,215,255,.35);
+  }
+  .btn:hover{ filter:brightness(1.05) }
+  .btn-ghost{
+    width:100%; padding:12px 14px; border-radius:12px; margin-top:10px;
+    background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+    border:1px solid rgba(255,255,255,.12); color:var(--text); cursor:pointer;
+  }
+  .hr{
+    display:flex; align-items:center; gap:12px; margin:14px 0;
+  }
+  .hr span{ height:1px; flex:1; background:linear-gradient(90deg, transparent, rgba(255,255,255,.12), transparent) }
+  .err{
+    display:none; margin-top:10px; font-size:13px; color:#fff;
+    background: linear-gradient(180deg, rgba(255,107,138,.22), rgba(255,107,138,.12));
+    border:1px solid rgba(255,255,255,.1); padding:10px 12px; border-radius:12px;
+  }
+  .foot{ margin-top:14px; font-size:12px; color:var(--muted); text-align:center }
+</style>
+</head>
+<body>
+  <div class="orb o1"></div>
+  <div class="orb o2"></div>
+
+  <div class="wrap">
+    <!-- Brand / left -->
+    <section class="brand-side">
+      <div class="brand-card" aria-hidden="true">
+        <div class="brand-head">
+          <div class="logo-dot"></div>
+          <div class="brand-title">e.wai</div>
+        </div>
+        <div class="brand-big">Welcome to e.wai</div>
+        <div class="brand-sub">Secure access to your water-quality datasets, dashboards, and analytics.</div>
+        <div class="badge">● SWIM Platform • Secure by design</div>
+
+        <div class="grid-kpis">
+          <div class="kpi">
+            <h4>Uptime</h4>
+            <div class="v">99.98%</div>
+          </div>
+          <div class="kpi">
+            <h4>Data Points</h4>
+            <div class="v">12.6M</div>
+          </div>
+          <div class="kpi">
+            <h4>Lakes & Rivers</h4>
+            <div class="v">184</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Auth / right -->
+    <section class="auth-side" role="main">
+      <div class="auth-card" role="region" aria-label="Sign in">
+        <div class="auth-head">
+          <div class="brand-mini">
+            <div class="logo-dot" style="width:10px;height:10px"></div>
+            <div>Sign in to <strong>e.wai</strong></div>
+          </div>
+          <div class="muted">Access your client workspace</div>
+        </div>
+
+        <form id="loginForm" novalidate>
+          <div class="field">
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" inputmode="email" autocomplete="email"
+                   placeholder="you@company.com" required />
+          </div>
+          <div class="field">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" autocomplete="current-password"
+                   placeholder="••••••••" minlength="6" required />
+            <button class="toggle" type="button" id="togglePwd" aria-label="Show password">Show</button>
+          </div>
+
+          <div class="row">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" id="remember" style="accent-color:#70d7ff"> <span class="muted">Remember me</span>
+            </label>
+            <a href="#" onclick="alert('Hook your password-reset route here')">Forgot password?</a>
+          </div>
+
+          <button class="btn" type="submit">Sign in</button>
+
+          <div class="hr" aria-hidden="true">
+            <span></span><small class="muted">or</small><span></span>
+          </div>
+
+          <button class="btn-ghost" type="button" onclick="alert('Hook your SSO/Google OAuth here')">
+            Continue with SSO
+          </button>
+
+          <div id="errorBox" class="err" role="alert">Invalid credentials. Please check your email and password.</div>
+          <div class="foot">By continuing you agree to our <a href="#" style="color:var(--accent)">Terms</a> and <a href="#" style="color:var(--accent)">Privacy</a>.</div>
+        </form>
+      </div>
+    </section>
+  </div>
+
+<script>
+  // Show/Hide password
+  const toggle = document.getElementById('togglePwd');
+  const pwd = document.getElementById('password');
+  toggle.addEventListener('click', ()=>{
+    const isPwd = pwd.type === 'password';
+    pwd.type = isPwd ? 'text' : 'password';
+    toggle.textContent = isPwd ? 'Hide' : 'Show';
+    toggle.setAttribute('aria-label', isPwd ? 'Hide password' : 'Show password');
+  });
+
+  // Dummy validation + submit (replace with real auth)
+  const form = document.getElementById('loginForm');
+  const errorBox = document.getElementById('errorBox');
+
+  form.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    errorBox.style.display = 'none';
+
+    const email = document.getElementById('email').value.trim();
+    const pass  = pwd.value;
+
+    // Simple client-side checks
+    const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    if(!validEmail || pass.length < 6){
+      errorBox.textContent = 'Please enter a valid email and a 6+ character password.';
+      errorBox.style.display = 'block';
+      return;
+    }
+
+    // MOCK: emulate server auth. Replace with fetch('/api/login', {method:'POST', body: JSON.stringify({...})})
+    await new Promise(r=>setTimeout(r, 600));
+    const ok = email.toLowerCase().endsWith('@example.com') && pass === 'demo123';
+
+    if(!ok){
+      errorBox.textContent = 'Invalid credentials. Please check your email and password.';
+      errorBox.style.display = 'block';
+      return;
+    }
+
+    // Success — redirect to your client dashboard
+    window.location.href = '/client/index.html'; // change to your route
+  });
+</script>
+</body>
+</html>

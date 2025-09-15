@@ -1,0 +1,49 @@
+/* page shell */
+.params__page { padding: 16px; }
+.params__toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px;
+}
+.params__title { margin: 0; font-size: 20px; }
+.params__controls { display: flex; align-items: center; gap: 12px; }
+.params__range { color: var(--muted, #6b7280); font-size: 12px; }
+
+/* tabs */
+.params__tabs { display: inline-flex; gap: 6px; }
+.params__tab {
+  border: 1px solid #2563eb; background: #fff; color: #2563eb;
+  padding: 4px 10px; border-radius: 6px; font-size: 12px; cursor: pointer;
+}
+.params__tab.is-active { background: #2563eb; color: #fff; }
+
+/* sections */
+.params__section { margin-top: 20px; }
+.params__sectionTitle { margin: 0 0 10px 0; font-size: 16px; font-weight: 600; }
+
+/* circle grid */
+.params__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 30px;
+}
+.params__circle {
+  width: 135px; height: 135px; border-radius: 70px; background: #ffffff;
+  border: 2px solid #2563eb; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; cursor: pointer;
+  transition: background .15s, border-color .15s, opacity .15s;
+}
+.params__circle.is-active { background: #e8f0ff; border-color: #1e40af; }
+.params__circle.is-disabled { opacity: .45; cursor: not-allowed; }
+.params__circleValue { font-weight: 700; font-size: 20px; line-height: 1; }
+.params__circleUnit { font-size: 12px; color: #6b7280; }
+.params__circleLabel { font-size: 12px; color: #374151; margin-top: 4px; }
+
+/* chart card */
+.params__chartCard {
+  margin: 14px 0 22px; padding: 10px; border: 1px solid #e5e7eb; border-radius: 10px; background: #fff;
+}
+.params__chartHeader { margin-bottom: 6px; color: #111827; }
+.params__empty { padding: 22px; color: #6b7280; text-align: center; }
+
+/* alerts */
+.alert { padding: 10px 12px; border-radius: 8px; margin: 8px 0; font-size: 14px; }
+.alert--error { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }

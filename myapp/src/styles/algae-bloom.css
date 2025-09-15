@@ -1,0 +1,52 @@
+/* Bloom Watch */
+.ab-banner {
+  padding: .35rem .6rem;
+  border-radius: 999px;
+  font-size: .85rem;
+  font-weight: 600;
+
+}
+.ab-banner--ok    { background: #e8f5e9; color:#1b5e20; }
+.ab-banner--watch { background: #fff8e1; color:#8d6e00; }
+.ab-banner--alert { background: #ffebee; color:#b71c1c; }
+.ab-banner--na    { background: #f3f4f6; color:#374151; }
+
+.ab-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap:46px  ;
+}
+.ab-card {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  align-items: center;
+  gap: 22px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--panel, #fff);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,.08));
+  border: 1px solid var(--border, #eee);
+}
+.ab-card--ok    { border-color:#c8e6c9; }
+.ab-card--watch { border-color:#ffe082; }
+.ab-card--alert { border-color:#ef9a9a; }
+.ab-card--na    { opacity:.7; }
+
+.ab-circle {
+  width: 76px; height:76px;
+  border-radius: 50%;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  border: 3px solid currentColor;
+}
+.ab-card--ok .ab-circle    { color:#2e7d32; }
+.ab-card--watch .ab-circle { color:#f59e0b; }
+.ab-card--alert .ab-circle { color:#e11d48; }
+.ab-card--na .ab-circle    { color:#9ca3af; }
+
+.ab-value { font-size: 1.05rem; font-weight: 700; line-height: 1; }
+.ab-unit  { font-size: .8rem; opacity:.8; }
+
+.ab-meta  { min-width: 0; }
+.ab-label { font-weight: 600; }
+.ab-hint  { font-size:.85rem; margin-top:2px; }
+.ab-sub   { font-size:.75rem; color:#6b7280; margin-top:2px; }

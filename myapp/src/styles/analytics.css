@@ -1,0 +1,111 @@
+/* Analytics-only styling; uses the same design tokens from global.css */
+
+.analytics {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.analytics__toolbar {
+  position: sticky;
+  top: 72px;
+  z-index: 5;
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  flex-wrap: wrap;
+  padding: var(--space-3);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.analytics__cards {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.analytics-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+  box-shadow: var(--shadow);
+}
+
+.heatmap {
+  overflow-x: auto;
+}
+
+.heatmap__grid {
+  display: grid;
+  gap: 2px;
+  /* columns set inline via style attr from React */
+}
+
+.heatmap__cell {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.heatmap__legend {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-top: var(--space-2);
+}
+
+.heatmap__swatch {
+  width: 18px;
+  height: 10px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #ef4444, #eab308, #10b981, #2563eb);
+}
+
+/* Scatter matrix grid */
+.scatter-matrix__grid {
+  display: grid;
+  gap: 8px;
+  /* columns set inline */
+}
+
+.scatter-matrix__cell {
+  min-width: 160px;
+  min-height: 140px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  background: var(--bg);
+}
+
+/* Distribution panel */
+.dist-grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 900px) {
+  .dist-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 640px) {
+  .dist-grid { grid-template-columns: 1fr; }
+}
+
+/* Badges / chips */
+.badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+}
+.badge--safe { background: rgba(16,185,129,.15); }
+.badge--warn { background: rgba(245,158,11,.20); }
+.badge--out { background: rgba(239,68,68,.20); }

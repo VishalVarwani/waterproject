@@ -1,0 +1,56 @@
+/* src/styles/ingestion.css */
+/* All rules are scoped to .ingestion to avoid bleeding into the rest of the app. */
+
+.ingestion .toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px;
+}
+
+/* Keep your existing button/input styles; just size them nicely here */
+.ingestion .toolbar .input,
+.ingestion .toolbar .select,
+.ingestion .toolbar .button,
+.ingestion .toolbar input[type="file"] {
+  height: 36px;
+}
+
+/* Preview block spacing only (inherits your card/colors) */
+.ingestion .ingest-preview {
+  padding: 16px;
+}
+
+.ingestion .ingest-preview p {
+  margin: 6px 0;
+}
+
+.ingestion .ingest-preview details {
+  margin-top: 10px;
+}
+
+.ingestion .ingest-preview pre {
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  max-height: 360px;
+  line-height: 1.35;
+  font-size: 12px;
+}
+
+/* Compact error spacing; uses your existing .alert styles */
+.ingestion .alert {
+  margin: 12px;
+}
+
+/* Responsive tweak for narrow layouts */
+@media (max-width: 820px) {
+  .ingestion .toolbar {
+    gap: 8px;
+  }
+  .ingestion .toolbar .input,
+  .ingestion .toolbar .select,
+  .ingestion .toolbar .button {
+    width: 100%;
+  }
+}

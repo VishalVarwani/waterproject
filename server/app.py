@@ -1,0 +1,893 @@
+# server/app.py
+from __future__ import annotations
+# server/app.py
+import os, sys, io, json, re, uuid, hashlib, traceback
+from typing import Any, Dict, List, Optional, Tuple
+
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import pandas as pd
+import psycopg2
+import psycopg2.extras as pgx
+from groq import Groq
+import decimal
+from datetime import date, datetime
+# Make repo root importable (parent of `server` and `ewai`)
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
+# ---- Import your modules from the renamed package ----
+from ewai.db.db_conn import get_connection
+
+# Use the file you actually have: db_utils.py OR db_util.py.
+# If your file is db_util.py, change to: from ewai.db.db_util import ...
+from ewai.db.db_util import (
+    ensure_schema, ensure_client,
+    upsert_waterbody, upsert_sampling_points,
+    register_dataset, melt_harmonized, insert_measurements,
+    CONTROLLED_META_VOCAB, CONTROLLED_UNIT_VOCAB,
+    upsert_parameters_for_codes, upsert_non_params_for_cols,
+)
+
+# If your file is `unit_converter.py`, import that name instead.
+from ewai.unit_convertor import convert_series
+
+from ewai.waterbody_llm_resolver import resolve_waterbody
+from ewai.auth.local_auth import login_local
+
+from config import Settings
+from utils import allowed_file, json_error, content_sha256, clamp_preview
+
+
+# ===== App =====
+settings = Settings()
+app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = settings.max_upload_mb * 1024 * 1024
+CORS(app, resources={r"/*": {"origins": settings.cors_origins}})
+
+# In-memory session cache for /ingest/map → /ingest/persist
+SESSION_CACHE: Dict[str, Dict[str, Any]] = {}
+
+# ---------- Helpers (LLM header mapping) ----------
+UNIT_NOT_PRESENT = "not_present"
+
+SYSTEM_PROMPT = (
+    "You are a precise data harmonization assistant for WATER QUALITY datasets. "
+    "Return STRICT JSON as an ARRAY only. For each raw header, do three tasks: "
+    "1) category: 'parameter' or 'meta'. "
+    "2) map_to: ONE canonical field from the chosen category vocabulary (lowercase snake_case EXACTLY). "
+    "3) unit_map_to: Only if category='parameter' and a measurement unit is clearly present in the HEADER TEXT "
+    "(e.g., 'mg/L', '(µg/L)', 'mV', 'NTU', '°C'), pick ONE allowed unit for that parameter. "
+    f"If no unit is present for parameters, set unit_map_to='{UNIT_NOT_PRESENT}'. "
+    "If a unit appears but is ambiguous, set 'unknown'. "
+    "For category='meta', set unit_map_to='not_applicable'. "
+    "Never map timestamps, ids, coordinates, or site/station fields to parameters. "
+    "If unsure about map_to, use map_to='unknown' with confidence<=0.5."
+)
+
+USER_PROMPT_TEMPLATE = """Task:
+For each raw header below, output a JSON object with:
+- category: "parameter" or "meta"
+- map_to:
+  - If category="parameter": one item from PARAM_VOCAB, else "unknown"
+  - If category="meta": one item from META_VOCAB, else "unknown"
+- unit_map_to:
+  - If category="parameter" and the header clearly shows a unit, choose ONE from CONTROLLED_UNIT_VOCAB[map_to]
+  - If category="parameter" and no unit appears, set "{unit_not_present}"
+  - If category="parameter" and a unit appears but is unclear/ambiguous, set "unknown"
+  - If category="meta": set "not_applicable"
+- confidence: parameter/meta mapping confidence [0..1]
+- unit_confidence: unit mapping confidence [0..1] (for meta: set 1.0)
+
+PARAM_VOCAB:
+{param_vocab}
+
+META_VOCAB:
+{meta_vocab}
+
+CONTROLLED_UNIT_VOCAB (allowed units per parameter):
+{unit_vocab}
+
+Return EXACTLY {n_headers} objects, in the SAME ORDER as the given headers:
+[
+  {{
+    "raw_header": "string",
+    "category": "parameter" | "meta",
+    "map_to": "canonical_field_or_unknown",
+    "confidence": 0.0_to_1.0,
+    "unit_map_to": "one_allowed_unit_or_{unit_not_present}_or_unknown_or_not_applicable",
+    "unit_confidence": 0.0_to_1.0
+  }}
+]
+
+Headers to map:
+{headers_json}
+"""
+
+def _coerce_json_array(text: str) -> list:
+    try:
+        j = json.loads(text)
+        if isinstance(j, list):
+            return j
+        if isinstance(j, dict):
+            for v in j.values():
+                if isinstance(v, list):
+                    return v
+    except Exception:
+        pass
+    if "[" in text and "]" in text:
+        snippet = text[text.find("["): text.rfind("]")+1]
+        try:
+            j = json.loads(snippet)
+            if isinstance(j, list):
+                return j
+        except Exception:
+            pass
+    return []
+
+def _norm_col(s: str) -> str:
+    s = re.sub(r"\s+", " ", str(s))
+    return s.strip()
+
+def _groq_client():
+    from groq import Groq
+    key = os.getenv("GROQ_API_KEY")
+    if not key:
+        raise RuntimeError("GROQ_API_KEY not set")
+    return Groq(api_key=key)
+
+def call_groq_map_headers(headers: List[str]) -> List[Dict[str, Any]]:
+    client = _groq_client()
+    model_name = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    CONTROLLED_PARAM_VOCAB = list(CONTROLLED_UNIT_VOCAB.keys())
+    user_prompt = USER_PROMPT_TEMPLATE.format(
+        param_vocab=json.dumps(CONTROLLED_PARAM_VOCAB, ensure_ascii=False),
+        meta_vocab=json.dumps(CONTROLLED_META_VOCAB, ensure_ascii=False),
+        unit_vocab=json.dumps(CONTROLLED_UNIT_VOCAB, ensure_ascii=False),
+        unit_not_present=UNIT_NOT_PRESENT,
+        n_headers=len(headers),
+        headers_json=json.dumps(headers, ensure_ascii=False),
+    )
+    resp = client.chat.completions.create(
+        model=model_name,
+        temperature=0.0,
+        max_tokens=20000,
+        response_format={"type": "json_object"},
+        messages=[{"role":"system","content":SYSTEM_PROMPT},
+                  {"role":"user","content":user_prompt}],
+    )
+    arr = _coerce_json_array(resp.choices[0].message.content.strip())
+    if not arr:
+        arr = [{"raw_header": h, "map_to": "unknown", "unit_map_to": UNIT_NOT_PRESENT,
+                "confidence": 0.0, "unit_confidence": 0.0} for h in headers]
+    return arr
+
+# ===================================================
+# Routes
+# ===================================================
+
+@app.get("/health")
+def health():
+    return jsonify({"ok": True})
+
+@app.post("/auth/login")
+def auth_login():
+    try:
+        data = request.get_json(force=True)
+        email = (data.get("email") or "").strip().lower()
+        password = data.get("password") or ""
+
+        # 1) Check password via local auth (keeps the simple pw flow)
+        _cid = login_local(email, password)
+        if not _cid:
+            return json_error("Invalid credentials", 401)
+
+        with get_connection() as conn:
+            ensure_schema(conn, seed_all=False)
+
+            # 2) If a client with this email already exists in DB, reuse its client_id
+            with conn.cursor() as cur:
+                cur.execute("SELECT client_id FROM public.clients WHERE email=%s", (email,))
+                row = cur.fetchone()
+            if row:
+                client_id = row[0]
+            else:
+                client_id = _cid  # first login for this email → create
+
+            # 3) Upsert (by client_id) so name is set and row exists
+            ensure_client(conn, client_id=client_id, email=email, display_name=email.split("@")[0])
+
+        return jsonify({"client_id": client_id, "email": email})
+    except Exception as e:
+        return json_error(str(e), 500)
+
+
+@app.post("/ingest/map")
+def ingest_map():
+    try:
+        if "file" not in request.files:
+            return json_error("missing file", 400)
+        f = request.files["file"]
+        if not allowed_file(f.filename):
+            return json_error("unsupported file type", 415)
+
+        sheet = request.form.get("sheet") or None
+        raw = f.read()
+        if not raw:
+            return json_error("empty upload", 400)
+
+        # Read CSV/XLSX
+        is_excel = f.filename.lower().endswith((".xlsx", ".xls"))
+        if is_excel:
+            xls = pd.ExcelFile(io.BytesIO(raw))
+            available_sheets = xls.sheet_names
+            pick = sheet or (available_sheets[0] if available_sheets else None)
+            if not pick:
+                return json_error("no sheet found", 400)
+            df = pd.read_excel(xls, sheet_name=pick)
+            sheet_name = pick
+        else:
+            df = pd.read_csv(io.BytesIO(raw))
+            available_sheets = ["csv"]
+            sheet_name = None
+
+        if df is None or df.empty:
+            return json_error("empty dataframe", 400)
+
+        headers = [str(c) for c in df.columns.tolist()]
+        mapping = call_groq_map_headers(headers)
+
+        # Build harmonized wide df (same as Streamlit logic)
+        norm_index = {_norm_col(c): c for c in df.columns}
+        param_set = set(CONTROLLED_UNIT_VOCAB.keys())
+        meta_set = set(CONTROLLED_META_VOCAB)
+
+        meta_src, meta_names = [], []
+        param_src, param_labels = [], []
+        used_src = set()
+
+        for item in mapping:
+            raw_display = str(item.get("raw_header", ""))
+            src = norm_index.get(_norm_col(raw_display))
+            if src is None or src in used_src:
+                continue
+            used_src.add(src)
+            mapped = str(item.get("map_to", "unknown")).strip()
+            unit_mapped = str(item.get("unit_map_to", UNIT_NOT_PRESENT)).strip()
+
+            if mapped in meta_set:
+                meta_src.append(src)
+                meta_names.append(mapped)
+            elif mapped in param_set:
+                label = mapped if unit_mapped in ("unknown", UNIT_NOT_PRESENT) else f"{mapped} [{unit_mapped}]"
+                param_src.append(src)
+                param_labels.append(label)
+
+        ordered_src = meta_src + param_src
+        df_h = df[ordered_src].copy() if ordered_src else pd.DataFrame()
+
+        # Unit conversions toward standard
+        final_names: List[str] = []
+        for src, label in zip(meta_src, meta_names):
+            final_names.append(label)
+
+        for i, src in enumerate(param_src):
+            label = param_labels[i]
+            if " [" in label and label.endswith("]"):
+                param = label.split(" [", 1)[0]
+                from_unit = label.split(" [", 1)[1][:-1]
+            else:
+                param = label
+                from_unit = UNIT_NOT_PRESENT
+            if from_unit not in ("unknown", UNIT_NOT_PRESENT):
+                series_converted, unit_to, did_convert = convert_series(param, from_unit, df_h[src])
+                if did_convert:
+                    df_h[src] = series_converted
+                    label = f"{param} [{unit_to}]"
+            final_names.append(label)
+
+        # uniqueify
+        seen = {}
+        def uniq(n):
+            if n in seen:
+                seen[n]+=1
+                return f"{n} ({seen[n]})"
+            seen[n]=0
+            return n
+        final_names = [uniq(n) for n in final_names]
+        rename_map = {src: new for src,new in zip(ordered_src, final_names)}
+        if rename_map:
+            df_h.rename(columns=rename_map, inplace=True)
+
+        # Sampling points df
+        if "sampling_point" in df_h.columns:
+            df_sampling = (
+                df_h[["sampling_point"]]
+                .dropna()
+                .assign(sampling_point=lambda d: d["sampling_point"].astype(str).str.strip())
+                .loc[lambda d: d["sampling_point"] != ""]
+                .drop_duplicates()
+                .reset_index(drop=True)
+            )
+            sampling_points = df_sampling["sampling_point"].tolist()
+        else:
+            df_sampling = pd.DataFrame({"sampling_point":[]})
+            sampling_points = []
+
+        waterbody = resolve_waterbody(
+            df=df,
+            filename=f.filename,
+            sheet_names=[sheet_name] if (is_excel and sheet_name) else ["csv"]
+        )
+
+        session_id = str(uuid.uuid4())
+        SESSION_CACHE[session_id] = {
+            "df_h": df_h,
+            "df_sampling": df_sampling,
+            "waterbody": waterbody,
+            "file_name": f.filename,
+            "sheet_name": sheet_name,
+            "raw_bytes": raw,
+            "available_sheets": available_sheets,
+        }
+
+        preview = clamp_preview(df_h, rows=20, cols=30)
+        return jsonify({
+            "columns": list(df_h.columns.astype(str)),
+            "preview": preview,  # list[dict]
+            "sampling_points": sampling_points,
+            "availableSheets": available_sheets,
+            "waterbody": waterbody,
+            "session_id": session_id,
+            "row_count": int(len(df_h)),
+            "col_count": int(df_h.shape[1]),
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return json_error(str(e), 500)
+
+@app.post("/ingest/persist")
+def ingest_persist():
+    try:
+        data = request.get_json(force=True)
+        session_id = data.get("session_id")
+        client_id = data.get("client_id")
+        email = data.get("email") or "unknown@example.com"
+        use_hash = bool(data.get("use_content_hash", True))
+        value_qualifier = (data.get("value_qualifier") or "").strip()
+
+        # NEW: merge policy
+        mode = (data.get("mode") or "new").lower()  # "new" | "append_auto" | "append_to"
+        target_dataset_id = data.get("target_dataset_id")  # used when mode == "append_to"
+
+        sess = SESSION_CACHE.get(session_id)
+        if not sess:
+            return json_error("invalid session_id", 400)
+
+        df_h = sess["df_h"]
+        df_sampling = sess["df_sampling"]
+        wb = sess["waterbody"]
+        file_name = data.get("file_name") or sess["file_name"]
+        sheet_name = data.get("sheet_name") or sess["sheet_name"]
+        raw_bytes = sess["raw_bytes"]
+
+        chash = content_sha256(raw_bytes, extra=(sheet_name or "")) if use_hash else None
+
+        with get_connection() as conn:
+            ensure_schema(conn, seed_all=False)
+            ensure_client(conn, client_id, email, email.split("@")[0] if email else None)
+
+            waterbody_id = upsert_waterbody(conn, client_id, wb) if wb else None
+            sp_map = upsert_sampling_points(conn, client_id, waterbody_id, df_sampling)
+
+            # ---------- decide dataset_id based on mode ----------
+            dataset_id = None
+
+            if mode == "append_to":
+                if not target_dataset_id:
+                    return json_error("target_dataset_id required for mode=append_to", 400)
+                dataset_id = target_dataset_id
+
+            elif mode == "append_auto" and waterbody_id:
+                # pick the most recent dataset for this client + waterbody
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT dataset_id
+                        FROM public.datasets
+                        WHERE client_id = %s AND waterbody_id = %s
+                        ORDER BY uploaded_at DESC
+                        LIMIT 1
+                        """,
+                        (client_id, waterbody_id),
+                    )
+                    row = cur.fetchone()
+                if row:
+                    dataset_id = row[0]
+
+            if not dataset_id:
+                # fallback → create new dataset row (same as before)
+                dataset_id = register_dataset(
+                    conn, client_id,
+                    file_name=file_name,
+                    sheet_name=sheet_name,
+                    row_count=len(df_h), col_count=df_h.shape[1],
+                    waterbody_id=waterbody_id,
+                    content_hash=chash if use_hash else None,
+                )
+            else:
+                # we are appending → optionally bump row_count/col_count
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        UPDATE public.datasets
+                        SET uploaded_at = now()
+                        WHERE dataset_id = %s
+                        """,
+                        (dataset_id,),
+                    )
+                conn.commit()
+            # ------------------------------------------------------
+
+            long_df = melt_harmonized(df_h)
+
+            used_param_codes = long_df["parameter_code"].dropna().astype(str).str.lower().unique().tolist()
+            upsert_parameters_for_codes(conn, used_param_codes)
+            used_meta_cols = [c for c in df_h.columns if c in CONTROLLED_META_VOCAB]
+            upsert_non_params_for_cols(conn, used_meta_cols)
+
+            if value_qualifier:
+                long_df["value_qualifier"] = value_qualifier
+
+            result = insert_measurements(conn, client_id, dataset_id, long_df, sp_map)
+
+        return jsonify({
+            "dataset_id": dataset_id,
+            "waterbody_id": waterbody_id,
+            "rows_in": int(result["rows_in"]),
+            "rows_inserted": int(result["rows_inserted"]),
+            "rows_skipped": int(result["rows_in"] - result["rows_inserted"]),
+            "mode": mode,
+            "appended_to_existing": mode in ("append_auto","append_to")
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return json_error(str(e), 500)
+
+@app.get("/datasets")
+def list_datasets():
+    try:
+        client_id = request.args.get("client_id")
+        if not client_id:
+            return json_error("client_id is required", 400)
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT d.dataset_id, d.file_name, d.sheet_name, d.row_count, d.col_count, d.uploaded_at,
+                           w.name AS waterbody_name, w.type AS waterbody_type
+                    FROM public.datasets d
+                    LEFT JOIN public.waterbodies w ON w.waterbody_id = d.waterbody_id
+                    WHERE d.client_id = %s
+                    ORDER BY d.uploaded_at DESC
+                    LIMIT 200
+                """, (client_id,))
+                rows = cur.fetchall()
+        out = []
+        for r in rows:
+            out.append({
+                "dataset_id": r[0], "file_name": r[1], "sheet_name": r[2],
+                "row_count": r[3], "col_count": r[4],
+                "uploaded_at": r[5].isoformat(),
+                "waterbody_name": r[6], "waterbody_type": r[7]
+            })
+        return jsonify({"items": out})
+    except Exception as e:
+        traceback.print_exc()
+        return json_error(str(e), 500)
+
+@app.get("/measurements")
+def measurements():
+    try:
+        client_id = request.args.get("client_id")
+        dataset_id = request.args.get("dataset_id")
+        parameter = request.args.get("parameter")
+        point = request.args.get("point")
+        t_from = request.args.get("from")
+        t_to = request.args.get("to")
+        if not client_id or not dataset_id:
+            return json_error("client_id and dataset_id required", 400)
+
+        params = [dataset_id]
+        where = ["m.dataset_id = %s"]
+
+        if parameter:
+            where.append("p.code = %s"); params.append(parameter.lower())
+        if point:
+            where.append("sp.code = %s"); params.append(point)
+        if t_from:
+            where.append("m.ts >= %s"); params.append(t_from)
+        if t_to:
+            where.append("m.ts <= %s"); params.append(t_to)
+
+        # ✨ NEW: include quality_flag_id and sp.lat/lon
+        sql = f"""
+            SELECT
+              m.ts,                           -- 0
+              COALESCE(sp.code,''),           -- 1
+              p.code,                         -- 2
+              m.value,                        -- 3
+              COALESCE(m.unit,p.standard_unit), -- 4
+              m.quality_flag_id,              -- 5
+              sp.lat,                         -- 6
+              sp.lon                          -- 7
+            FROM public.measurements m
+            JOIN public.parameters p ON p.parameter_id = m.parameter_id
+            LEFT JOIN public.sampling_points sp ON sp.sampling_point_id = m.sampling_point_id
+            WHERE {' AND '.join(where)}
+            ORDER BY m.ts NULLS LAST
+            LIMIT 50000
+        """
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                rows = cur.fetchall()
+
+        # ✨ map all 8 columns so the client gets what it expects
+        data = [{
+            "ts": (r[0].isoformat() if r[0] else None),
+            "sampling_point": r[1],
+            "parameter": r[2],
+            "value": None if r[3] is None else float(r[3]),
+            "unit": r[4],
+            "quality_flag_id": r[5],
+            "lat": None if r[6] is None else float(r[6]),
+            "lon": None if r[7] is None else float(r[7]),
+        } for r in rows]
+
+        return jsonify({"data": data})
+    except Exception as e:
+        traceback.print_exc()
+        return json_error(str(e), 500)
+
+@app.get("/analytics/correlation")
+def correlation():
+    try:
+        client_id = request.args.get("client_id")
+        dataset_id = request.args.get("dataset_id")
+        method = (request.args.get("method") or "pearson").lower()
+        if method not in ("pearson", "spearman"):
+            return json_error("method must be pearson|spearman", 400)
+        if not client_id or not dataset_id:
+            return json_error("client_id and dataset_id required", 400)
+
+        sql = """
+            SELECT m.ts::date AS d, COALESCE(sp.code,''), p.code, AVG(m.value)
+            FROM public.measurements m
+            JOIN public.parameters p ON p.parameter_id = m.parameter_id
+            LEFT JOIN public.sampling_points sp ON sp.sampling_point_id = m.sampling_point_id
+            WHERE m.dataset_id = %s
+              AND m.value IS NOT NULL
+            GROUP BY d, sp.code, p.code
+        """
+        with get_connection() as conn:
+            df = pd.read_sql(sql, conn, params=(dataset_id,), columns=["d","point","param","value"])
+        if df.empty:
+            return jsonify({"labels": [], "matrix": []})
+        # pivot to (date,point) × param and compute correlations across rows
+        df_p = df.pivot_table(index=["d","point"], columns="param", values="value", aggfunc="mean")
+        df_p = df_p.dropna(axis=1, how="all")  # drop empty columns
+        if df_p.shape[1] < 2:
+            return jsonify({"labels": list(df_p.columns.astype(str)), "matrix": df_p.corr(method=method).fillna(0).values.tolist()})
+        corr = df_p.corr(method=method).fillna(0)
+        return jsonify({"labels": list(corr.columns.astype(str)), "matrix": corr.values.tolist()})
+    except Exception as e:
+        traceback.print_exc()
+        return json_error(str(e), 500)
+
+@app.get("/analytics/anomalies")
+def anomalies():
+    try:
+        client_id = request.args.get("client_id")
+        dataset_id = request.args.get("dataset_id")
+        if not client_id or not dataset_id:
+            return json_error("client_id and dataset_id required", 400)
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT p.code, COALESCE(sp.code,''), qf.code, COUNT(*)
+                    FROM public.measurements m
+                    JOIN public.parameters p ON p.parameter_id = m.parameter_id
+                    LEFT JOIN public.sampling_points sp ON sp.sampling_point_id = m.sampling_point_id
+                    LEFT JOIN public.quality_flags qf ON qf.quality_flag_id = m.quality_flag_id
+                    WHERE m.dataset_id = %s
+                    GROUP BY 1,2,3
+                """, (dataset_id,))
+                rows = cur.fetchall()
+        # aggregate
+        by_param: Dict[str, Dict[str,int]] = {}
+        by_point: Dict[str, Dict[str,int]] = {}
+        for pcode, spcode, qcode, cnt in rows:
+            by_param.setdefault(pcode, {"ok":0,"out_of_range":1,"missing":2,"outlier":3})
+            by_param[pcode][qcode or "ok"] = by_param[pcode].get(qcode or "ok",0) + cnt
+            by_point.setdefault(spcode or "", {"ok":0,"out_of_range":0,"missing":0,"outlier":0})
+            by_point[spcode or ""][qcode or "ok"] = by_point[spcode or ""].get(qcode or "ok",0) + cnt
+        return jsonify({"by_parameter": by_param, "by_sampling_point": by_point})
+    except Exception as e:
+        traceback.print_exc()
+        return json_error(str(e), 500)
+"""     
+talk2csv
+"""
+# util: get schema once (or cache)
+
+# Disallow any write-y verbs. We also strip comments to avoid bypass via comments.
+# ---- Replace your _is_safe_select with this version ----
+_BLOCK = (
+    "insert","update","delete","drop","alter","create","grant","revoke",
+    "truncate","vacuum","analyze","copy","merge","call","do"
+)
+_COMMENT = re.compile(r"(--[^\n]*\n)|(/\*.*?\*/)", re.IGNORECASE | re.DOTALL)
+
+def _is_safe_select(sql: str) -> bool:
+    """
+    Defensive checker:
+    - strip comments
+    - must start with SELECT or WITH
+    - cannot contain blacklisted verbs
+    - forbid semicolons (single statement only)
+    """
+    if not sql:
+        return False
+    s = _COMMENT.sub("\n", sql).strip().lower()
+    if ";" in s:
+        return False
+    if not (s.startswith("select") or s.startswith("with ")):
+        return False
+    for bad in _BLOCK:
+        if re.search(rf"\b{re.escape(bad)}\b", s):
+            return False
+    return True
+
+def _fetch_schema(conn):
+    """
+    Lightweight public schema snapshot → {table: [{name,type}, ...]}
+    """
+    q = """
+    SELECT table_name, column_name, data_type, ordinal_position
+    FROM information_schema.columns
+    WHERE table_schema='public'
+    ORDER BY table_name, ordinal_position;
+    """
+    with conn.cursor(cursor_factory=pgx.DictCursor) as cur:
+        cur.execute(q)
+        rows = cur.fetchall()
+    schema = {}
+    for r in rows:
+        schema.setdefault(r["table_name"], []).append(
+            {"name": r["column_name"], "type": r["data_type"]}
+        )
+    return schema
+
+
+def _run_readonly_sql(conn, sql: str, limit: int = 500):
+    if not _is_safe_select(sql):
+        raise ValueError("Only SELECT statements are allowed.")
+    with conn.cursor(cursor_factory=pgx.DictCursor) as cur:
+        cur.execute("SET LOCAL default_transaction_read_only = on")
+        cur.execute(f"SELECT * FROM ({sql}) sub LIMIT %s", (int(limit),))
+        rows = cur.fetchall()
+
+    def norm(v):
+        if isinstance(v, decimal.Decimal):
+            # if it’s NaN/Inf this will raise; fall back to None
+            try:
+                return float(v)
+            except Exception:
+                return None
+        if isinstance(v, (datetime, date)):
+            return v.isoformat()
+        return v
+
+    out_rows = [{k: norm(v) for k, v in dict(r).items()} for r in rows]
+    cols = list(out_rows[0].keys()) if out_rows else []
+    return {"columns": cols, "rows": out_rows}
+
+# ------------------------------
+# LLM glue (Groq)
+# ------------------------------
+
+ASSISTANT_SYSTEM = (
+  "You are Talk2CSV, a careful water-research copilot with read-only access to a Postgres database.\n"
+  "\n"
+  "CONTRACT (always output STRICT JSON):\n"
+  "{\n"
+  '  "answer": string,              // short, helpful explanation. Do NOT paste tabular rows here.\n'
+  '  "sql": string|null,            // ONE read-only query (SELECT/CTE). Keep it simple.\n'
+  '  "chart": {                     // Optional chart when helpful or explicitly requested\n'
+  '     "type": "line"|"bar"|"area"|"scatter",\n'
+  '     "x": "<column name>",\n'
+  '     "series": ["<y col 1>", "<y col 2>", ...]\n'
+  "  } | null\n"
+  "}\n"
+  "\n"
+  "Guidelines:\n"
+  "- Never write/modify data. SELECT/CTE only. One statement. No semicolons.\n"
+  "- Do not include result tables inside \"answer\". The UI renders rows itself.\n"
+  "- If the user asks to plot/visualize/graph, ALWAYS return a chart block.\n"
+  "- Prefer clean, readable SQL. Join via documented keys only.\n"
+  "- Use general water-quality knowledge when explaining (e.g., WHO/EPA style thresholds for cyanobacteria, microcystins, chlorophyll-a, pH ranges),\n"
+  "  but keep it as context in \"answer\"; never invent columns or tables.\n"
+  "- If something is ambiguous, ask a brief follow-up question in \"answer\" and still provide your best safe SQL.\n"
+)
+
+def _groq():
+    from groq import Groq
+    key = os.getenv("GROQ_API_KEY")
+    if not key:
+        raise RuntimeError("GROQ_API_KEY not set")
+    return Groq(api_key=key)
+
+# ------------------------------
+# Routes
+# ------------------------------
+
+@app.get("/assistant/schema")
+def assistant_schema():
+    try:
+        with get_connection() as conn:
+            schema = _fetch_schema(conn)
+        return jsonify({"schema": schema})
+    except Exception as e:
+        traceback.print_exc()
+        # Always JSON on error
+        return jsonify({"error": str(e)}), 500
+
+@app.post("/assistant/chat")
+def assistant_chat():
+    """
+    Request body:
+      {
+        messages: [{role:'user'|'assistant', content:string}, ...], // we look at the last user content
+        limit: number                                               // optional row cap, default 300
+      }
+
+    Response (always JSON, even on error):
+      {
+        answer: string,
+        sql: string|null,
+        chart: object|null,
+        columns: [string]|null,
+        rows: [object]|null,
+        sql_error: string|undefined
+      }
+    """
+    try:
+        payload = request.get_json(force=True) or {}
+        limit = int(payload.get("limit", 300))
+
+        # 1) Current prompt (prefer 'content', fallback to legacy 'text')
+        msgs = payload.get("messages") or []
+        last_user_msg = None
+        for m in reversed(msgs[-10:]):
+            if (m.get("role") == "user") and (m.get("content") or m.get("text")):
+                last_user_msg = m.get("content") or m.get("text")
+                break
+        prompt = (last_user_msg or "").strip()
+        if not prompt:
+            return jsonify({"answer": "", "sql": None, "chart": None, "columns": None, "rows": None}), 200
+
+        wants_chart = bool(re.search(r"\b(plot|chart|graph|visual|time series|line|bar|area|scatter)\b", prompt, re.I))
+
+        # 2) Snapshot schema + human notes to steer good joins
+        with get_connection() as conn:
+            schema = _fetch_schema(conn)
+
+        schema_notes = {
+            "entities": {
+                "measurements": {
+                    "keys": ["measurement_id", "dataset_id", "parameter_id", "sampling_point_id", "quality_flag_id", "ts", "value", "unit"],
+                },
+                "parameters": {
+                    "keys": ["parameter_id", "code", "display_name", "standard_unit"],
+                },
+                "sampling_points": {
+                    "keys": ["sampling_point_id", "client_id", "code", "name", "lat", "lon"],
+                },
+                "datasets": {
+                    "keys": ["dataset_id", "client_id", "uploaded_at", "waterbody_id"],
+                },
+                "quality_flags": {
+                    "keys": ["quality_flag_id", "code"],
+                }
+            },
+            "joins": [
+                "measurements.parameter_id = parameters.parameter_id",
+                "measurements.sampling_point_id = sampling_points.sampling_point_id",
+                "measurements.quality_flag_id = quality_flags.quality_flag_id",
+                "measurements.dataset_id = datasets.dataset_id"
+            ],
+            "notes": [
+                "Prefer p.code for parameter identities.",
+                "sampling_points.lat/lon are available for mapping.",
+                "Use date_trunc for rollups (day, month)."
+            ]
+        }
+
+        user_content = json.dumps(
+            {
+                "schema": schema,
+                "schema_notes": schema_notes,
+                "prompt": prompt,
+                "wants_chart": wants_chart,
+                "policy": "read_only_select_only"
+            },
+            ensure_ascii=False
+        )
+
+        # 3) Ask the model
+        client = _groq()
+        resp = client.chat.completions.create(
+            model=os.getenv("GROQ_MODEL","llama-3.3-70b-versatile"),
+            temperature=0.2,
+            max_tokens=10000,
+            response_format={"type":"json_object"},
+            messages=[
+              {"role":"system","content":ASSISTANT_SYSTEM},
+              {"role":"user","content":user_content},
+            ],
+        )
+        raw = resp.choices[0].message.content.strip()
+        try:
+            model_json = json.loads(raw)
+        except Exception:
+            model_json = {"answer": raw, "sql": None, "chart": None}
+
+        result = {
+            "answer": model_json.get("answer",""),
+            "sql": model_json.get("sql"),
+            "chart": model_json.get("chart"),
+            "columns": None,
+            "rows": None,
+        }
+
+        # 4) If we got SQL, run it read-only and attach rows/columns
+        sql = (model_json.get("sql") or "").strip()
+        columns = None
+        rows = None
+        if sql:
+            try:
+                with get_connection() as conn:
+                    table = _run_readonly_sql(conn, sql, limit=limit)
+                columns = table["columns"]
+                rows = table["rows"]
+                result["columns"] = columns
+                result["rows"] = rows
+            except Exception as se:
+                result["sql_error"] = str(se)
+
+        # 5) If the user wanted a chart but the model forgot, infer a safe default
+        if wants_chart and not result.get("chart") and columns and rows:
+            # pick first column as x; any numeric columns as series
+            def is_num_col(col):
+                for r in rows:
+                    v = r.get(col)
+                    if v is not None:
+                        return isinstance(v, (int, float))
+                return False
+
+            x = columns[0]
+            y_series = [c for c in columns[1:] if is_num_col(c)]
+            if y_series:
+                # Heuristic: if x looks like a date bucket, prefer line/area; otherwise bar
+                kind = "line" if re.search(r"(date|day|month|year|ts)", x, re.I) else "bar"
+                result["chart"] = {"type": kind, "x": x, "series": y_series}
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+    
+if __name__ == "__main__":
+    app.run(port=8000, debug=True)

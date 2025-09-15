@@ -1,0 +1,14 @@
+.talk2csv .chat { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
+.talk2csv .msg { display: flex; }
+.talk2csv .msg--user { justify-content: flex-end; }
+.talk2csv .msg__bubble {
+  max-width: 900px; padding: 12px 14px; border-radius: 12px;
+  background: var(--card-bg, #1112); backdrop-filter: blur(4px);
+}
+.talk2csv .msg--user .msg__bubble { background: var(--accent-bg, #2563eb22); }
+.talk2csv .composer { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.talk2csv .table-scroll { overflow: auto; max-height: 280px; margin-top: 8px; }
+.talk2csv .mini-table { border-collapse: collapse; font-size: 12px; width: 100%; }
+.talk2csv .mini-table th, .talk2csv .mini-table td { border-bottom: 1px solid #0002; padding: 6px 8px; text-align: left; }
+.talk2csv .sql { margin-top: 8px; padding: 8px; background:#0002; overflow:auto; }
+.talk2csv .chart-card { margin-top: 10px; height: 340px; }

@@ -1,0 +1,168 @@
+/* Uses your existing tokens from global.css: --bg, --card, --border, --primary, --muted, --fg, --shadow, --radius */
+
+.login {
+  position: relative;
+  min-height: calc(100vh - 0px);
+  background:
+    radial-gradient(1200px 700px at 15% -10%, color-mix(in oklab, var(--primary) 18%, transparent), transparent 55%) no-repeat,
+    radial-gradient(800px 500px at 85% 110%, color-mix(in oklab, var(--primary) 12%, transparent), transparent 60%) no-repeat,
+    var(--bg);
+  overflow: hidden;
+}
+
+.login-orb {
+  position: fixed;
+  width: 520px;
+  height: 520px;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: .25;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 35% 35%, #fff, color-mix(in oklab, var(--primary) 70%, #22c55e) 35%, var(--primary) 100%);
+  animation: login-float 18s ease-in-out infinite alternate;
+}
+.login-orb--left { top: -180px; left: -140px; transform: scale(.9); }
+.login-orb--right { bottom: -220px; right: -160px; animation-delay: 1.2s; transform: scale(.8); }
+
+@keyframes login-float {
+  to { transform: translateY(40px) translateX(20px) scale(1) rotate(6deg); }
+}
+
+.login-wrap {
+  position: relative;
+  z-index: 1;
+  min-height: 100%;
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+}
+@media (max-width: 980px) {
+  .login-wrap { grid-template-columns: 1fr; }
+}
+
+/* Brand (left) */
+.login-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5);
+}
+.brand-card {
+  width: min(720px, 92%);
+  padding: var(--space-4);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02)), var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+.brand-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.brand-dot {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #fff, color-mix(in oklab, var(--primary) 60%, #22d3ee) 35%, #0ea5b1 100%);
+  box-shadow: 0 0 18px color-mix(in oklab, var(--primary) 55%, #22d3ee);
+}
+.brand-dot--mini { width: 10px; height: 10px; }
+.brand-title { font-weight: 800; font-size: 20px; }
+.brand-big {
+  font-size: 32px; font-weight: 800; line-height: 1.1; margin: 10px 0 6px;
+  color: var(--fg);
+}
+.brand-sub { color: var(--muted); }
+.brand-badge {
+  display: inline-flex; gap: 8px; align-items: center;
+  padding: 8px 12px; border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+  border-radius: 12px; color: color-mix(in oklab, var(--primary) 20%, #a7f3d0); font-weight: 600; font-size: 12px; margin-top: 14px;
+}
+
+.brand-kpis {
+  display: grid; gap: 12px; grid-template-columns: repeat(3, 1fr);
+  margin-top: 16px;
+}
+.kpi {
+  padding: 14px; border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+  border: 1px solid var(--border);
+}
+.kpi h4 { margin: 0 0 6px 0; font-size: 12px; color: var(--muted); letter-spacing: .3px; }
+.kpi-v { font-size: 22px; font-weight: 800; }
+
+/* Auth (right) */
+.login-auth {
+  display: flex; align-items: center; justify-content: center; padding: var(--space-5);
+  background: linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.01)), var(--card);
+  border-left: 1px solid var(--border);
+}
+.auth-card {
+  width: min(460px, 92%);
+  padding: var(--space-4);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)), var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+.auth-head {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
+}
+.brand-mini {
+  display: flex; align-items: center; gap: 10px; font-weight: 800;
+}
+.muted { color: var(--muted); }
+
+form { margin-top: 8px; }
+label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; letter-spacing: .3px; }
+
+.field { margin-bottom: 14px; }
+.pwd-row { position: relative; }
+input[type="email"], input[type="password"], input[type="text"] {
+  width: 100%; padding: 12px;
+  color: var(--fg); background: var(--bg); border: 1px solid var(--border);
+  border-radius: 12px; outline: none; transition: border .15s ease, box-shadow .15s ease;
+}
+input:focus { border-color: var(--primary); box-shadow: 0 0 0 4px color-mix(in oklab, var(--primary) 20%, transparent); }
+
+.toggle-pwd {
+  position: absolute; top: 50%; right: 8px; transform: translateY(-50%);
+  padding: 6px 10px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--card); color: var(--muted); cursor: pointer; font-size: 12px;
+}
+
+.row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 0 16px;
+}
+.remember { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.remember input { accent-color: var(--primary); }
+
+.link { color: var(--primary); text-decoration: none; }
+
+.btn {
+  width: 100%; padding: 12px 14px; border-radius: 12px; border: none; cursor: pointer;
+  background: linear-gradient(180deg, var(--primary), color-mix(in oklab, var(--primary) 70%, #86e0ff));
+  color: var(--bg); font-weight: 800; letter-spacing: .3px; box-shadow: var(--shadow);
+}
+.btn:hover { filter: brightness(1.05); }
+.btn-ghost {
+  width: 100%; padding: 12px 14px; border-radius: 12px; margin-top: 10px;
+  background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+  border: 1px solid var(--border); color: var(--fg); cursor: pointer;
+}
+
+.hr { display: flex; align-items: center; gap: 12px; margin: 14px 0; }
+.hr-line { height: 1px; flex: 1; background: linear-gradient(90deg, transparent, var(--border), transparent); }
+
+.error {
+  margin-top: 10px; font-size: 13px; color: var(--fg);
+  background: linear-gradient(180deg, rgba(239,68,68,.22), rgba(239,68,68,.12));
+  border: 1px solid var(--border); padding: 10px 12px; border-radius: 12px;
+}
+
+.foot { margin-top: 14px; font-size: 12px; color: var(--muted); text-align: center; }
+
+@media (max-width: 980px) {
+  .login-auth { border-left: none; border-top: 1px solid var(--border); }
+}
