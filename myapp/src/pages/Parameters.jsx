@@ -64,6 +64,28 @@ export default function Parameters() {
     }
     return map
   }, [rawRows])
+// right after rawRows is defined
+const nameByCode = useMemo(() => {
+  const m = {};
+  for (const r of rawRows) {
+    if (r.parameter && r.parameter_display) {
+      m[r.parameter] = r.parameter_display;
+    }
+  }
+  return m;
+}, [rawRows]);
+
+// helper to pretty-print if display_name is missing
+const prettyParam = (code) => {
+  if (!code) return "";
+  if (code.toLowerCase() === "ph") return "pH";
+  if (code.toLowerCase() === "toc") return "TOC";
+  // fallback: snake_case -> Title Case
+  return code
+    .split("_")
+    .map(w => w ? w[0].toUpperCase() + w.slice(1) : w)
+    .join(" ");
+};
 
   // UI state
   const [range, setRange] = useState("6M")
@@ -213,7 +235,7 @@ function Section({ title, items, present, latestByParam, selected, onPick }) {
             >
               <div className="params__circleValue">{val}</div>
               <div className="params__circleUnit">{unit}</div>
-              <div className="params__circleLabel">{code}</div>
+              <div className="params__circleLabel">{nameByCode[code] || prettyParam(code)}</div>
             </button>
           )
         })}
@@ -226,7 +248,7 @@ function ChartBlock({ loading, param, data }) {
   return (
     <div className="params__chartCard" role="region" aria-label={`${param || "no"} time series`}>
       <div className="params__chartHeader">
-        <strong>{param ? `${param} — time series` : "Select a parameter"}</strong>
+        <strong>{param ? `${nameByCode[param] || prettyParam(param)} — time series` : "Select a parameter"}</strong>
       </div>
       {!param ? (
         <div className="params__empty">No parameter selected.</div>
