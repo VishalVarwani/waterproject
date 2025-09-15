@@ -1,3 +1,4 @@
+// src/pages/Parameters.jsx
 import { useContext, useEffect, useMemo, useState } from "react"
 import dayjs from "dayjs"
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts"
@@ -42,6 +43,31 @@ export default function Parameters() {
   // raw rows already loaded on Dashboard (via FiltersContext)
   const rawRows = (filters?.rawData?.measurements) || []
 
+  // Build a quick lookup: parameter code -> preferred display (from backend)
+  const paramDisplayByCode = useMemo(() => {
+    const map = {}
+    for (const r of rawRows) {
+      const code = (r.parameter || "").toLowerCase()
+      const disp = r.parameter_display
+      if (code && disp) map[code] = disp
+    }
+    return map
+  }, [rawRows])
+
+  // Pretty-name helper with exceptions
+  const prettyParam = (code) => {
+    if (!code) return ""
+    const lc = String(code).toLowerCase()
+    if (lc === "ph") return "pH"     // exception
+    if (lc === "toc") return "TOC"   // exception
+    if (paramDisplayByCode[lc]) return paramDisplayByCode[lc]
+    // Fallback: title-case the snake_case code
+    return String(code)
+      .split("_")
+      .map(w => w ? w[0].toUpperCase() + w.slice(1) : "")
+      .join(" ")
+  }
+
   // latest timestamp in currently loaded rows (fallback now)
   const latestTs = useMemo(() => {
     if (!rawRows.length) return null
@@ -64,28 +90,6 @@ export default function Parameters() {
     }
     return map
   }, [rawRows])
-// right after rawRows is defined
-const nameByCode = useMemo(() => {
-  const m = {};
-  for (const r of rawRows) {
-    if (r.parameter && r.parameter_display) {
-      m[r.parameter] = r.parameter_display;
-    }
-  }
-  return m;
-}, [rawRows]);
-
-// helper to pretty-print if display_name is missing
-const prettyParam = (code) => {
-  if (!code) return "";
-  if (code.toLowerCase() === "ph") return "pH";
-  if (code.toLowerCase() === "toc") return "TOC";
-  // fallback: snake_case -> Title Case
-  return code
-    .split("_")
-    .map(w => w ? w[0].toUpperCase() + w.slice(1) : w)
-    .join(" ");
-};
 
   // UI state
   const [range, setRange] = useState("6M")
@@ -170,10 +174,12 @@ const prettyParam = (code) => {
         latestByParam={latestByParam}
         selected={sel.physical}
         onPick={(param)=>handlePick("physical", param)}
+        labelFor={prettyParam}
       />
       <ChartBlock
         loading={loadingKey==="physical"}
         param={sel.physical}
+        labelFor={prettyParam}
         data={series.physical}
       />
 
@@ -184,10 +190,12 @@ const prettyParam = (code) => {
         latestByParam={latestByParam}
         selected={sel.chemical}
         onPick={(param)=>handlePick("chemical", param)}
+        labelFor={prettyParam}
       />
       <ChartBlock
         loading={loadingKey==="chemical"}
         param={sel.chemical}
+        labelFor={prettyParam}
         data={series.chemical}
       />
 
@@ -198,10 +206,12 @@ const prettyParam = (code) => {
         latestByParam={latestByParam}
         selected={sel.bio}
         onPick={(param)=>handlePick("bio", param)}
+        labelFor={prettyParam}
       />
       <ChartBlock
         loading={loadingKey==="bio"}
         param={sel.bio}
+        labelFor={prettyParam}
         data={series.bio}
       />
     </div>
@@ -210,7 +220,7 @@ const prettyParam = (code) => {
 
 /** ------- Local, file-scoped mini components ------- */
 
-function Section({ title, items, present, latestByParam, selected, onPick }) {
+function Section({ title, items, present, latestByParam, selected, onPick, labelFor }) {
   return (
     <section className="params__section">
       <h3 className="params__sectionTitle">{title}</h3>
@@ -220,6 +230,7 @@ function Section({ title, items, present, latestByParam, selected, onPick }) {
           const latest = latestByParam[code]
           const val = (latest && Number.isFinite(latest.value)) ? Number(latest.value).toFixed(1) : "—"
           const unit = latest?.unit || ""
+          const label = labelFor ? labelFor(code) : code
           return (
             <button
               key={code}
@@ -229,13 +240,13 @@ function Section({ title, items, present, latestByParam, selected, onPick }) {
                 (!has ? " is-disabled" : "")
               }
               onClick={() => has && onPick(code)}
-              title={code}
+              title={label}
               aria-pressed={selected === code}
               disabled={!has}
             >
               <div className="params__circleValue">{val}</div>
               <div className="params__circleUnit">{unit}</div>
-              <div className="params__circleLabel">{nameByCode[code] || prettyParam(code)}</div>
+              <div className="params__circleLabel">{label}</div>
             </button>
           )
         })}
@@ -244,11 +255,12 @@ function Section({ title, items, present, latestByParam, selected, onPick }) {
   )
 }
 
-function ChartBlock({ loading, param, data }) {
+function ChartBlock({ loading, param, data, labelFor }) {
+  const label = param ? (labelFor ? labelFor(param) : param) : ""
   return (
-    <div className="params__chartCard" role="region" aria-label={`${param || "no"} time series`}>
+    <div className="params__chartCard" role="region" aria-label={`${label || "no"} time series`}>
       <div className="params__chartHeader">
-        <strong>{param ? `${nameByCode[param] || prettyParam(param)} — time series` : "Select a parameter"}</strong>
+        <strong>{label ? `${label} — time series` : "Select a parameter"}</strong>
       </div>
       {!param ? (
         <div className="params__empty">No parameter selected.</div>

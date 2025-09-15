@@ -394,32 +394,17 @@ const paramNameByCode = useMemo(() => {
               <main className="content" aria-live="polite">
                 <KpiStrip kpis={kpis} />
                 <AlgaeBloomWatch />
+                {SHOW_MAP && (
+                  <section className="section">
+                    <h2 className="section__title">Map</h2>
+                    <MapView
+                      points={samplingPointsList}
+                      onSelectPoint={handleSelectPoint}
+                    />
+                  </section>
+                )}
 
-                <section className="section">
-                  <div className="section__header">
-                    <h2 className="section__title">Time Series</h2>
-                    <div className="section__controls">
-                      <label className="label" htmlFor="primaryParam">Primary parameter:</label>
-                      <select
-                        id="primaryParam"
-                        className="select"
-                        value={primaryParam}
-                        onChange={e => setPrimaryParam(e.target.value)}
-                        aria-label="Primary parameter for sampling point cards"
-                      >
-                        {availableParams.map(p => (
-                          <option key={p} value={p}>{paramNameByCode[p] || p}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <TimeSeriesChart
-                    seriesByParam={seriesByParam}
-                    tempUnit={tempUnit}
-                    focusParam={primaryParam}
-                  />
-                </section>
+               
 
                 <section className="section">
                   <h2 className="section__title">Sampling Points</h2>
@@ -465,16 +450,31 @@ const paramNameByCode = useMemo(() => {
                   </div>
                 </section>
 
-                {SHOW_MAP && (
-                  <section className="section">
-                    <h2 className="section__title">Map</h2>
-                    <MapView
-                      points={samplingPointsList}
-                      onSelectPoint={handleSelectPoint}
-                    />
-                  </section>
-                )}
+                 <section className="section">
+                  <div className="section__header">
+                    <h2 className="section__title">Time Series</h2>
+                    <div className="section__controls">
+                      <label className="label" htmlFor="primaryParam">Primary parameter:</label>
+                      <select
+                        id="primaryParam"
+                        className="select"
+                        value={primaryParam}
+                        onChange={e => setPrimaryParam(e.target.value)}
+                        aria-label="Primary parameter for sampling point cards"
+                      >
+                        {availableParams.map(p => (
+                          <option key={p} value={p}>{paramNameByCode[p] || p}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
 
+                  <TimeSeriesChart
+                    seriesByParam={seriesByParam}
+                    tempUnit={tempUnit}
+                    focusParam={primaryParam}
+                  />
+                </section>
                 <section className="section">
                   <h2 className="section__title">Measurements Table</h2>
                   <ParameterTable
