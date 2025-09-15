@@ -1,5 +1,8 @@
 node_modules
 dist
-.env*
-server/__pycache__/
+.env
+.env.*
 server/.env
+ewai/.env
+ewai/.streamlit/secrets.toml
+server/__pycache__/
