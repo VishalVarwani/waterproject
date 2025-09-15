@@ -1,8 +1,10 @@
-flask==3.0.3
-flask-cors==4.0.0
-python-dotenv==1.0.1
-pandas==2.2.3
 openpyxl==3.1.5
-groq==0.11.0
-psycopg2-binary==2.9.10
-pydantic==2.9.2
+pydantic
+flask
+flask-cors
+pandas
+psycopg2-binary
+gunicorn
+python-dotenv
+groq
+gunicorn
