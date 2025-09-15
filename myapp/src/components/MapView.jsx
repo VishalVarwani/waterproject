@@ -1,9 +1,18 @@
 import PropTypes from 'prop-types'
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
+import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
 const DEFAULT_CENTER = [20, 0]
 const DEFAULT_ZOOM = 2
+
+// Custom blue location icon
+const locationIcon = new L.Icon({
+  iconUrl: 'https://www.freeiconspng.com/uploads/blue-location-icon-png-19.png',
+  iconSize: [32, 32],      // tweak if you want larger/smaller
+  iconAnchor: [16, 32],    // point of the icon which will correspond to marker's location
+  popupAnchor: [0, -28],   // where the popup should open relative to the iconAnchor
+})
 
 function FitToMarkers({ points }) {
   const map = useMap()
@@ -37,7 +46,12 @@ export default function MapView({ points = [], onSelectPoint }) {
         <FitToMarkers points={valid} />
 
         {valid.map(p => (
-          <Marker key={p.id} position={[p.lat, p.lon]} eventHandlers={{ click: () => onSelectPoint?.(p.id) }}>
+          <Marker
+            key={p.id}
+            position={[p.lat, p.lon]}
+            icon={locationIcon}
+            eventHandlers={{ click: () => onSelectPoint?.(p.id) }}
+          >
             <Popup>
               <strong>{p.name}</strong><br />
               {p.id}
