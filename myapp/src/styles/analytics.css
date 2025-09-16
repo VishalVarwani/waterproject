@@ -1,4 +1,5 @@
-/* Analytics-only styling; uses the same design tokens from global.css */
+/* src/styles/analytics.css */
+/* Analytics-only styling; keeps to your design tokens from global.css */
 
 .analytics {
   display: flex;
@@ -11,7 +12,7 @@
   top: 72px;
   z-index: 5;
   display: flex;
-  gap: var(--space-3);
+  gap: var(--space-4);
   align-items: center;
   flex-wrap: wrap;
   padding: var(--space-3);
@@ -21,11 +22,9 @@
   box-shadow: var(--shadow);
 }
 
-.analytics__cards {
-  display: grid;
-  gap: var(--space-4);
-}
+.toolbar__group { display: flex; gap: var(--space-2); align-items: center; }
 
+/* Cards */
 .analytics-card {
   background: var(--card);
   border: 1px solid var(--border);
@@ -34,71 +33,107 @@
   box-shadow: var(--shadow);
 }
 
-.heatmap {
-  overflow-x: auto;
+.card-title {
+  font-weight: 600;
+  margin-bottom: var(--space-2);
 }
 
-.heatmap__grid {
+/* Simple responsive grids */
+.two-col {
   display: grid;
-  gap: 2px;
-  /* columns set inline via style attr from React */
+  gap: var(--space-4);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (max-width: 900px) {
+  .two-col { grid-template-columns: 1fr; }
 }
 
+/* Indicators row */
+.indicators {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+@media (max-width: 1200px) {
+  .indicators { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .indicators { grid-template-columns: 1fr; }
+}
+
+.indicator-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: var(--space-2);
+}
+.indicator-card__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.indicator-card__label { color: var(--muted); font-size: 13px; }
+.indicator-card__value { font-size: 24px; font-weight: 800; }
+.indicator-bar {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(2,6,23,.06);
+  overflow: hidden;
+}
+:root[data-theme="dark"] .indicator-bar { background: rgba(255,255,255,.08); }
+.indicator-bar__fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--ok), var(--primary));
+}
+
+/* Heatmap */
+.heatmap { overflow-x: auto; }
+.heatmap__row {
+  display: grid;
+  grid-auto-flow: column;
+  gap: 2px;
+  margin-bottom: 2px;
+  align-items: center;
+}
+.heatmap__row--header { margin-bottom: 6px; }
+.heatmap__corner { width: 84px; }
+.heatmap__side, .heatmap__head {
+  width: 84px;
+  font-size: 12px;
+  color: var(--muted);
+}
 .heatmap__cell {
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
   display: grid;
   place-items: center;
-  border-radius: 6px;
+  color: white;
+  font-weight: 700;
   font-size: 11px;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.05);
 }
-
+:root[data-theme="dark"] .heatmap__cell { box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); }
+.heatmap__val { filter: drop-shadow(0 1px 1px rgba(0,0,0,.2)); }
 .heatmap__legend {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   align-items: center;
   margin-top: var(--space-2);
 }
-
 .heatmap__swatch {
-  width: 18px;
+  width: 120px;
   height: 10px;
   border-radius: 2px;
-  background: linear-gradient(90deg, #ef4444, #eab308, #10b981, #2563eb);
+  background: linear-gradient(90deg, #ef4444, #f59e0b, #10b981, #2563eb);
 }
 
-/* Scatter matrix grid */
-.scatter-matrix__grid {
-  display: grid;
-  gap: 8px;
-  /* columns set inline */
-}
-
-.scatter-matrix__cell {
-  min-width: 160px;
-  min-height: 140px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 4px;
-  background: var(--bg);
-}
-
-/* Distribution panel */
-.dist-grid {
-  display: grid;
-  gap: var(--space-3);
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-@media (max-width: 900px) {
-  .dist-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
-@media (max-width: 640px) {
-  .dist-grid { grid-template-columns: 1fr; }
-}
-
-/* Badges / chips */
+/* Chips row under anomalies */
+.chips { display: flex; gap: var(--space-2); flex-wrap: wrap; }
 .badge {
   display: inline-block;
   padding: 4px 8px;
@@ -108,4 +143,12 @@
 }
 .badge--safe { background: rgba(16,185,129,.15); }
 .badge--warn { background: rgba(245,158,11,.20); }
-.badge--out { background: rgba(239,68,68,.20); }
+.badge--out  { background: rgba(239,68,68,.20); }
+
+/* Narrative */
+.narrative {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--fg);
+  background-image: linear-gradient(180deg, rgba(2,6,23,.02), transparent);
+}
