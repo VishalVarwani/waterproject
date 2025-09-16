@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import dayjs from 'dayjs'
 import minMax from 'dayjs/plugin/minMax'
 dayjs.extend(minMax)
@@ -34,6 +34,7 @@ function ProtectedRoute({ user, children }) {
 }
 
 export default function App() {
+  // --- Auth (persist in sessionStorage; DO NOT clear on reload)
   const [user, setUser] = useState(() => {
     try {
       const raw = sessionStorage.getItem('auth_user')
@@ -50,18 +51,14 @@ export default function App() {
     if (window.location.pathname !== '/login') window.location.assign('/login')
   }
 
-  useEffect(() => {
-    const handleUnload = () => { try { sessionStorage.removeItem('auth_user') } catch {} }
-    window.addEventListener('beforeunload', handleUnload)
-    return () => window.removeEventListener('beforeunload', handleUnload)
-  }, [])
-
+  // --- API-backed dataset + rows ---
   const [datasets, setDatasets] = useState([])
   const [datasetId, setDatasetId] = useState(() => sessionStorage.getItem('datasetId') || '')
   const [rawRows, setRawRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
+  // --- Filters (unchanged UI)
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [selectedPoints, setSelectedPoints] = useState([])
@@ -70,31 +67,41 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(false)
   const [primaryParam, setPrimaryParam] = useState('temperature')
 
-  useEffect(() => {
-    let cancelled = false
-    async function run() {
-      if (!user?.client_id) { setLoading(false); return }
-      setLoading(true); setError(null)
-      try {
-        const res = await api.listDatasets(user.client_id)
-        if (cancelled) return
-        const items = res.items || []
-        setDatasets(items)
-        if (!datasetId && items.length) setDatasetId(items[0].dataset_id)
-      } catch (e) {
-        if (!cancelled) setError(String(e.message || e))
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
+  // --- NEW: refresh function we can call from anywhere (e.g., after ingest)
+  const refreshDatasets = useCallback(async () => {
+    if (!user?.client_id) return []
+    try {
+      const res = await api.listDatasets(user.client_id)
+      const items = res.items || []
+      setDatasets(items)
+      return items
+    } catch (e) {
+      console.error(e)
+      return []
     }
-    run()
-    return () => { cancelled = true }
   }, [user?.client_id])
 
+  // Load dataset list after login
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      if (!user?.client_id) { setLoading(false); return }
+      setLoading(true); setError(null)
+      const items = await refreshDatasets()
+      if (!cancelled && !datasetId && items.length) {
+        setDatasetId(items[0].dataset_id)
+      }
+      if (!cancelled) setLoading(false)
+    })()
+    return () => { cancelled = true }
+  }, [user?.client_id, refreshDatasets])
+
+  // Persist chosen dataset id (SESSION)
   useEffect(() => {
     if (datasetId) sessionStorage.setItem('datasetId', datasetId)
   }, [datasetId])
 
+  // Load measurements for selected dataset
   useEffect(() => {
     let cancelled = false
     async function run() {
@@ -103,7 +110,9 @@ export default function App() {
       try {
         const res = await api.fetchMeasurements({ clientId: user.client_id, datasetId })
         if (cancelled) return
+
         const FLAG_ID_TO_CODE = { 0: 'ok', 1: 'out_of_range', 2: 'missing', 3: 'outlier' }
+
         const rows = (res.data || []).map(r => {
           const flagId = r?.quality_flag_id == null ? null : Number(r.quality_flag_id)
           const parameterCode = String((r.parameter_code ?? r.parameter ?? '')).toLowerCase()
@@ -122,6 +131,7 @@ export default function App() {
         })
         setRawRows(rows)
 
+        // init filters (dates + points)
         const ts = rows.map(m => dayjs(m.timestamp)).filter(t => t.isValid())
         const min = ts.length ? dayjs.min(ts) : dayjs().subtract(30, 'day')
         const max = ts.length ? dayjs.max(ts) : dayjs()
@@ -156,6 +166,7 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light')
   }, [darkMode])
 
+  // Synthesize sampling_points list (with lat/lon) for Filters/Map
   const samplingPointsList = useMemo(() => {
     const map = new Map()
     for (const m of rawRows) {
@@ -172,12 +183,14 @@ export default function App() {
     return Array.from(map.values())
   }, [rawRows])
 
+  // Available params from data (for dropdowns)
   const availableParams = useMemo(() => {
     const s = new Set(rawRows.map(r => r.parameter))
     const arr = Array.from(s)
     return arr.length ? arr : ['temperature','ph','dissolved_oxygen','turbidity','nitrate']
   }, [rawRows])
 
+  // Filtered rows for the table/KPIs (date + point + selected parameters)
   const filteredMeasurements = useMemo(() => {
     if (!rawRows.length) return []
     const start = dateFrom ? dayjs(dateFrom).startOf('day') : null
@@ -201,6 +214,7 @@ export default function App() {
       })
   }, [rawRows, dateFrom, dateTo, selectedPoints, selectedParams, tempUnit])
 
+  // Unfiltered rows (still convert temperature for consistency)
   const unfilteredMeasurements = useMemo(() => {
     return rawRows.map(m => {
       if (m.parameter === 'temperature') {
@@ -240,6 +254,7 @@ export default function App() {
     setPrimaryParam(params.includes('temperature') ? 'temperature' : (params[0] || 'temperature'))
   }
 
+  // --- Time series built from ALL rows (unfiltered) ---
   const seriesByParam = useMemo(() => {
     const map = {}
     unfilteredMeasurements.forEach(m => {
@@ -251,6 +266,7 @@ export default function App() {
     return map
   }, [unfilteredMeasurements])
 
+  // Sampling point stats for the cards (from ALL rows, always visible)
   const statsByPointAll = useMemo(() => {
     const byPoint = {}
     unfilteredMeasurements
@@ -282,22 +298,25 @@ export default function App() {
         const lvl = pickLevelByCode(code, last?.value)?.level || 'na'
         if (rank[lvl] > rank[worstLevel]) worstLevel = lvl
       }
-      map[sp.id] = levelToSafety(worstLevel) // -> 'safe' | 'warn' | 'unsafe'
+      map[sp.id] = levelToSafety(worstLevel) // 'safe' | 'warn' | 'unsafe'
     }
     return map
   }, [unfilteredMeasurements, samplingPointsList])
 
+  // KPIs based on DB flags
   const kpis = useMemo(() => {
     const total = filteredMeasurements.length
     const toId = (m) => m?.quality_flag_id == null ? null : Number(m.quality_flag_id)
-    const oks    = filteredMeasurements.filter(m => toId(m) === 0).length
-    const warns  = filteredMeasurements.filter(m => toId(m) === 2).length
-    const alerts = filteredMeasurements.filter(m => toId(m) === 1).length
+    const oks    = filteredMeasurements.filter(m => toId(m) === 0).length // OK
+    const warns  = filteredMeasurements.filter(m => toId(m) === 2).length // Missing
+    const alerts = filteredMeasurements.filter(m => toId(m) === 1).length // Out of range
 
     const tempVals = filteredMeasurements
       .filter(m => m.parameter === 'temperature' && m.value != null)
       .map(m => Number(m.value))
-    const meanTemp = tempVals.length ? tempVals.reduce((a, b) => a + b, 0) / tempVals.length : null
+    const meanTemp = tempVals.length
+      ? tempVals.reduce((a, b) => a + b, 0) / tempVals.length
+      : null
 
     return { total, oks, warns, alerts, meanTemp, tempUnit }
   }, [filteredMeasurements, tempUnit])
@@ -323,12 +342,15 @@ export default function App() {
     dateFrom, dateTo, selectedPoints, selectedParams, tempUnit,
     setDateFrom, setDateTo, setSelectedPoints, setSelectedParams, setTempUnit,
     datasets, datasetId, setDatasetId,
+    // NEW: expose so Ingestion/Datasets can refresh immediately
+    refreshDatasets,
+    setDatasets,
   }
 
   const datasetToolbar = (
     datasets.length > 1 && (
       <div className="toolbar" style={{ padding: '8px 16px' }}>
-        {/* dataset selector intentionally hidden here */}
+        {/* dataset selector intentionally hidden */}
       </div>
     )
   )
@@ -339,7 +361,10 @@ export default function App() {
     <div className="page page--center" role="alert">{error}</div>
   ) : (
     <Routes>
+      {/* Public */}
       <Route path="/login" element={<Login />} />
+
+      {/* Protected */}
       <Route
         path="/"
         element={
@@ -365,8 +390,10 @@ export default function App() {
               </aside>
 
               <main className="content" aria-live="polite">
+                {/* KPIs */}
                 <KpiStrip kpis={kpis} />
 
+                {/* Map + Sampling Points row */}
                 {SHOW_MAP && (
                   <section className="section">
                     <div
@@ -376,17 +403,15 @@ export default function App() {
                         gap: 16,
                       }}
                     >
-                      {/* Left: Map */}
                       <div>
                         <h2 className="section__title">Map</h2>
                         <MapView
                           points={samplingPointsList}
-                          statusById={statusById}   
+                          statusById={statusById}
                           onSelectPoint={handleSelectPoint}
                         />
                       </div>
 
-                      {/* Right: Sampling Points */}
                       <div>
                         <h2 className="section__title">Sampling Points</h2>
                         <div
@@ -434,10 +459,10 @@ export default function App() {
                   </section>
                 )}
 
+                {/* Algae Bloom Watch BELOW the row */}
                 <AlgaeBloomWatch />
 
-                {/* Time Series section currently hidden per your last edit */}
-
+                {/* Measurements Table */}
                 <section className="section">
                   <h2 className="section__title">Measurements Table</h2>
                   <ParameterTable

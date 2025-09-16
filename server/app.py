@@ -345,11 +345,16 @@ def ingest_map():
             df_sampling = pd.DataFrame({"sampling_point": []})
             sampling_points = []
 
-        waterbody = resolve_waterbody(
-            df=df,
-            filename=f.filename,
-            sheet_names=[sheet_name] if (is_excel and sheet_name) else ["csv"]
-        )
+        try:
+            waterbody = resolve_waterbody(
+                df=df,
+                filename=f.filename,
+                sheet_names=[sheet_name] if (is_excel and sheet_name) else ["csv"]
+            )
+        except Exception as e:
+            # Log and continue; don't break ingestion if LLM JSON is invalid
+            traceback.print_exc()
+            waterbody = None
 
         session_id = str(uuid.uuid4())
         SESSION_CACHE[session_id] = {
