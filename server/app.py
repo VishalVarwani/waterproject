@@ -1,27 +1,27 @@
-# server/app.py
 from __future__ import annotations
-# server/app.py
-import os, sys, io, json, re, uuid, hashlib, traceback
-from typing import Any, Dict, List, Optional, Tuple
 
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+import os, sys, io, json, re, uuid, hashlib, traceback, decimal
+from typing import Any, Dict, List, Optional, Tuple
+from datetime import date, datetime
+
+from flask import Flask, request, jsonify, make_response
+
 import pandas as pd
 import psycopg2
 import psycopg2.extras as pgx
-from groq import Groq
-import decimal
-from datetime import date, datetime
+
 # Make repo root importable (parent of `server` and `ewai`)
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
-
-# ---- Import your modules from the renamed package ----
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(BASE_DIR, ".env"))                     # repo root
+    load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))    # server/.env
+except Exception:
+    pass
+# ---- Imports from shared package ----
 from ewai.db.db_conn import get_connection
-
-# Use the file you actually have: db_utils.py OR db_util.py.
-# If your file is db_util.py, change to: from ewai.db.db_util import ...
 from ewai.db.db_util import (
     ensure_schema, ensure_client,
     upsert_waterbody, upsert_sampling_points,
@@ -29,34 +29,53 @@ from ewai.db.db_util import (
     CONTROLLED_META_VOCAB, CONTROLLED_UNIT_VOCAB,
     upsert_parameters_for_codes, upsert_non_params_for_cols,
 )
-
-# If your file is `unit_converter.py`, import that name instead.
 from ewai.unit_convertor import convert_series
-
 from ewai.waterbody_llm_resolver import resolve_waterbody
-from ewai.auth.local_auth import login_local
+from ewai.auth.local_auth import login_local  # ensure this exists (see file below)
 
 from config import Settings
 from utils import allowed_file, json_error, content_sha256, clamp_preview
 
-
 # ===== App =====
 settings = Settings()
+ALLOWED_ORIGINS = set(settings.cors_origins)
+
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = settings.max_upload_mb * 1024 * 1024
-CORS(
-    app,
-    origins=settings.cors_origins,
-    supports_credentials=False,
-    allow_headers=["Content-Type", "Authorization"],
-    methods=["GET", "POST", "OPTIONS"],
-    expose_headers=["Content-Type"]
-)
 
-# In-memory session cache for /ingest/map → /ingest/persist
-SESSION_CACHE: Dict[str, Dict[str, Any]] = {}
+# ---- Precise CORS (manual, no Flask-CORS) ----
+def _normalize_origin(o: str | None) -> str | None:
+    if not o:
+        return None
+    return o[:-1] if o.endswith("/") else o
 
-# ---------- Helpers (LLM header mapping) ----------
+@app.before_request
+def _handle_preflight():
+    # Respond early to CORS preflight with exact origin echo
+    if request.method == "OPTIONS":
+        origin_raw = request.headers.get("Origin")
+        origin = _normalize_origin(origin_raw)
+        resp = make_response("", 200)
+        if origin and origin in ALLOWED_ORIGINS:
+            resp.headers["Access-Control-Allow-Origin"] = origin_raw  # echo exactly
+            resp.headers["Vary"] = "Origin"
+        resp.headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,DELETE,OPTIONS"
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
+        return resp
+
+@app.after_request
+def _add_cors_headers(resp):
+    origin_raw = request.headers.get("Origin")
+    origin = _normalize_origin(origin_raw)
+    if origin and origin in ALLOWED_ORIGINS:
+        resp.headers["Access-Control-Allow-Origin"] = origin_raw  # echo exactly
+        resp.headers["Vary"] = "Origin"
+    resp.headers.setdefault("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+    resp.headers.setdefault("Access-Control-Allow-Headers", "Content-Type,Authorization")
+    return resp
+# -----------------------------------------------
+
+# ---------- LLM header mapping helpers ----------
 UNIT_NOT_PRESENT = "not_present"
 
 SYSTEM_PROMPT = (
@@ -170,6 +189,9 @@ def call_groq_map_headers(headers: List[str]) -> List[Dict[str, Any]]:
                 "confidence": 0.0, "unit_confidence": 0.0} for h in headers]
     return arr
 
+# In-memory session cache for /ingest/map → /ingest/persist
+SESSION_CACHE: Dict[str, Dict[str, Any]] = {}
+
 # ===================================================
 # Routes
 # ===================================================
@@ -207,23 +229,9 @@ def auth_login():
 
         return jsonify({"client_id": client_id, "email": email})
     except Exception as e:
+        traceback.print_exc()
         return json_error(str(e), 500)
 
-@app.after_request
-def add_cors_headers(resp):
-    # Ensure preflight/normal responses always include CORS for your dev origin
-    origin = resp.headers.get("Access-Control-Allow-Origin")
-    if not origin:
-        # pick first allowed origin (or echo if you prefer)
-        if isinstance(settings.cors_origins, (list, tuple)) and settings.cors_origins:
-            resp.headers["Access-Control-Allow-Origin"] = settings.cors_origins[0]
-        else:
-            resp.headers["Access-Control-Allow-Origin"] = "http://localhost:5173"
-
-    resp.headers.setdefault("Vary", "Origin")
-    resp.headers.setdefault("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
-    resp.headers.setdefault("Access-Control-Allow-Headers", "Content-Type,Authorization")
-    return resp
 @app.post("/ingest/map")
 def ingest_map():
     try:
@@ -259,7 +267,7 @@ def ingest_map():
         headers = [str(c) for c in df.columns.tolist()]
         mapping = call_groq_map_headers(headers)
 
-        # Build harmonized wide df (same as Streamlit logic)
+        # Build harmonized wide df
         norm_index = {_norm_col(c): c for c in df.columns}
         param_set = set(CONTROLLED_UNIT_VOCAB.keys())
         meta_set = set(CONTROLLED_META_VOCAB)
@@ -309,15 +317,16 @@ def ingest_map():
             final_names.append(label)
 
         # uniqueify
-        seen = {}
-        def uniq(n):
+        seen: Dict[str, int] = {}
+        def uniq(n: str) -> str:
             if n in seen:
-                seen[n]+=1
+                seen[n] += 1
                 return f"{n} ({seen[n]})"
-            seen[n]=0
+            seen[n] = 0
             return n
+
         final_names = [uniq(n) for n in final_names]
-        rename_map = {src: new for src,new in zip(ordered_src, final_names)}
+        rename_map = {src: new for src, new in zip(ordered_src, final_names)}
         if rename_map:
             df_h.rename(columns=rename_map, inplace=True)
 
@@ -333,7 +342,7 @@ def ingest_map():
             )
             sampling_points = df_sampling["sampling_point"].tolist()
         else:
-            df_sampling = pd.DataFrame({"sampling_point":[]})
+            df_sampling = pd.DataFrame({"sampling_point": []})
             sampling_points = []
 
         waterbody = resolve_waterbody(
@@ -428,7 +437,7 @@ def ingest_persist():
                     dataset_id = row[0]
 
             if not dataset_id:
-                # fallback → create new dataset row (same as before)
+                # create new dataset row
                 dataset_id = register_dataset(
                     conn, client_id,
                     file_name=file_name,
@@ -438,14 +447,10 @@ def ingest_persist():
                     content_hash=chash if use_hash else None,
                 )
             else:
-                # we are appending → optionally bump row_count/col_count
+                # appending → bump timestamp
                 with conn.cursor() as cur:
                     cur.execute(
-                        """
-                        UPDATE public.datasets
-                        SET uploaded_at = now()
-                        WHERE dataset_id = %s
-                        """,
+                        "UPDATE public.datasets SET uploaded_at = now() WHERE dataset_id = %s",
                         (dataset_id,),
                     )
                 conn.commit()
@@ -499,7 +504,7 @@ def list_datasets():
             out.append({
                 "dataset_id": r[0], "file_name": r[1], "sheet_name": r[2],
                 "row_count": r[3], "col_count": r[4],
-                "uploaded_at": r[5].isoformat(),
+                "uploaded_at": r[5].isoformat() if r[5] else None,
                 "waterbody_name": r[6], "waterbody_type": r[7]
             })
         return jsonify({"items": out})
@@ -531,22 +536,21 @@ def measurements():
         if t_to:
             where.append("m.ts <= %s"); params.append(t_to)
 
-        # ✨ NEW: include quality_flag_id and sp.lat/lon
         sql = f"""
             SELECT
-            m.ts,                                 -- 0
-            COALESCE(sp.code,'')        AS spcode,-- 1
-            p.code                      AS pcode, -- 2
-            CASE
+              m.ts,                                                      -- 0
+              COALESCE(sp.code,'')              AS spcode,               -- 1
+              p.code                            AS pcode,                -- 2
+              CASE
                 WHEN lower(p.code) = 'ph'  THEN 'pH'
                 WHEN lower(p.code) = 'toc' THEN 'TOC'
                 ELSE p.display_name
-            END                           AS parameter_display,  -- 3
-            m.value,                                 -- 4
-            COALESCE(m.unit, p.standard_unit) AS unit,          -- 5
-            m.quality_flag_id,                            -- 6
-            sp.lat,                                       -- 7
-            sp.lon                                        -- 8
+              END                               AS parameter_display,    -- 3
+              m.value,                                                   -- 4
+              COALESCE(m.unit, p.standard_unit) AS unit,                -- 5
+              m.quality_flag_id,                                        -- 6
+              sp.lat,                                                   -- 7
+              sp.lon                                                    -- 8
             FROM public.measurements AS m
             JOIN public.parameters  AS p  ON p.parameter_id = m.parameter_id
             LEFT JOIN public.sampling_points AS sp ON sp.sampling_point_id = m.sampling_point_id
@@ -559,7 +563,6 @@ def measurements():
                 cur.execute(sql, params)
                 rows = cur.fetchall()
 
-        # ✨ map all 8 columns so the client gets what it expects
         data = [{
             "ts": (r[0].isoformat() if r[0] else None),
             "sampling_point": r[1],
@@ -589,23 +592,26 @@ def correlation():
             return json_error("client_id and dataset_id required", 400)
 
         sql = """
-            SELECT m.ts::date AS d, COALESCE(sp.code,''), p.code, AVG(m.value)
+            SELECT
+              m.ts::date                           AS d,
+              COALESCE(sp.code,'')                 AS point,
+              p.code                                AS param,
+              AVG(m.value)                          AS value
             FROM public.measurements m
             JOIN public.parameters p ON p.parameter_id = m.parameter_id
             LEFT JOIN public.sampling_points sp ON sp.sampling_point_id = m.sampling_point_id
             WHERE m.dataset_id = %s
               AND m.value IS NOT NULL
-            GROUP BY d, sp.code, p.code
+            GROUP BY 1,2,3
         """
         with get_connection() as conn:
-            df = pd.read_sql(sql, conn, params=(dataset_id,), columns=["d","point","param","value"])
+            df = pd.read_sql(sql, conn, params=(dataset_id,))
         if df.empty:
             return jsonify({"labels": [], "matrix": []})
+
         # pivot to (date,point) × param and compute correlations across rows
-        df_p = df.pivot_table(index=["d","point"], columns="param", values="value", aggfunc="mean")
+        df_p = df.pivot_table(index=["d", "point"], columns="param", values="value", aggfunc="mean")
         df_p = df_p.dropna(axis=1, how="all")  # drop empty columns
-        if df_p.shape[1] < 2:
-            return jsonify({"labels": list(df_p.columns.astype(str)), "matrix": df_p.corr(method=method).fillna(0).values.tolist()})
         corr = df_p.corr(method=method).fillna(0)
         return jsonify({"labels": list(corr.columns.astype(str)), "matrix": corr.values.tolist()})
     except Exception as e:
@@ -635,21 +641,19 @@ def anomalies():
         by_param: Dict[str, Dict[str,int]] = {}
         by_point: Dict[str, Dict[str,int]] = {}
         for pcode, spcode, qcode, cnt in rows:
-            by_param.setdefault(pcode, {"ok":0,"out_of_range":1,"missing":2,"outlier":3})
-            by_param[pcode][qcode or "ok"] = by_param[pcode].get(qcode or "ok",0) + cnt
-            by_point.setdefault(spcode or "", {"ok":0,"out_of_range":0,"missing":0,"outlier":0})
-            by_point[spcode or ""][qcode or "ok"] = by_point[spcode or ""].get(qcode or "ok",0) + cnt
+            q = qcode or "ok"
+            by_param.setdefault(pcode, {"ok":0,"out_of_range":0,"missing":0,"outlier":0})
+            by_param[pcode][q] = by_param[pcode].get(q, 0) + cnt
+            spk = spcode or ""
+            by_point.setdefault(spk, {"ok":0,"out_of_range":0,"missing":0,"outlier":0})
+            by_point[spk][q] = by_point[spk].get(q, 0) + cnt
         return jsonify({"by_parameter": by_param, "by_sampling_point": by_point})
     except Exception as e:
         traceback.print_exc()
         return json_error(str(e), 500)
-"""     
-talk2csv
-"""
-# util: get schema once (or cache)
 
-# Disallow any write-y verbs. We also strip comments to avoid bypass via comments.
-# ---- Replace your _is_safe_select with this version ----
+# ---------------- Talk2CSV (read-only) ----------------
+
 _BLOCK = (
     "insert","update","delete","drop","alter","create","grant","revoke",
     "truncate","vacuum","analyze","copy","merge","call","do"
@@ -696,7 +700,6 @@ def _fetch_schema(conn):
         )
     return schema
 
-
 def _run_readonly_sql(conn, sql: str, limit: int = 500):
     if not _is_safe_select(sql):
         raise ValueError("Only SELECT statements are allowed.")
@@ -707,7 +710,6 @@ def _run_readonly_sql(conn, sql: str, limit: int = 500):
 
     def norm(v):
         if isinstance(v, decimal.Decimal):
-            # if it’s NaN/Inf this will raise; fall back to None
             try:
                 return float(v)
             except Exception:
@@ -720,18 +722,14 @@ def _run_readonly_sql(conn, sql: str, limit: int = 500):
     cols = list(out_rows[0].keys()) if out_rows else []
     return {"columns": cols, "rows": out_rows}
 
-# ------------------------------
-# LLM glue (Groq)
-# ------------------------------
-
 ASSISTANT_SYSTEM = (
   "You are Talk2CSV, a careful water-research copilot with read-only access to a Postgres database.\n"
   "\n"
   "CONTRACT (always output STRICT JSON):\n"
   "{\n"
-  '  "answer": string,              // short, helpful explanation. Do NOT paste tabular rows here.\n'
-  '  "sql": string|null,            // ONE read-only query (SELECT/CTE). Keep it simple.\n'
-  '  "chart": {                     // Optional chart when helpful or explicitly requested\n'
+  '  "answer": string,\n'
+  '  "sql": string|null,\n'
+  '  "chart": {\n'
   '     "type": "line"|"bar"|"area"|"scatter",\n'
   '     "x": "<column name>",\n'
   '     "series": ["<y col 1>", "<y col 2>", ...]\n'
@@ -743,9 +741,8 @@ ASSISTANT_SYSTEM = (
   "- Do not include result tables inside \"answer\". The UI renders rows itself.\n"
   "- If the user asks to plot/visualize/graph, ALWAYS return a chart block.\n"
   "- Prefer clean, readable SQL. Join via documented keys only.\n"
-  "- Use general water-quality knowledge when explaining (e.g., WHO/EPA style thresholds for cyanobacteria, microcystins, chlorophyll-a, pH ranges),\n"
-  "  but keep it as context in \"answer\"; never invent columns or tables.\n"
-  "- If something is ambiguous, ask a brief follow-up question in \"answer\" and still provide your best safe SQL.\n"
+  "- Use general water-quality knowledge for context in the answer; never invent columns.\n"
+  "- If something is ambiguous, ask a brief follow-up in \"answer\" and still provide safe SQL.\n"
 )
 
 def _groq():
@@ -755,10 +752,6 @@ def _groq():
         raise RuntimeError("GROQ_API_KEY not set")
     return Groq(api_key=key)
 
-# ------------------------------
-# Routes
-# ------------------------------
-
 @app.get("/assistant/schema")
 def assistant_schema():
     try:
@@ -767,33 +760,21 @@ def assistant_schema():
         return jsonify({"schema": schema})
     except Exception as e:
         traceback.print_exc()
-        # Always JSON on error
         return jsonify({"error": str(e)}), 500
 
 @app.post("/assistant/chat")
 def assistant_chat():
     """
     Request body:
-      {
-        messages: [{role:'user'|'assistant', content:string}, ...], // we look at the last user content
-        limit: number                                               // optional row cap, default 300
-      }
-
-    Response (always JSON, even on error):
-      {
-        answer: string,
-        sql: string|null,
-        chart: object|null,
-        columns: [string]|null,
-        rows: [object]|null,
-        sql_error: string|undefined
-      }
+      { messages:[{role,content}], limit?:number }
+    Response:
+      { answer, sql, chart, columns, rows, sql_error? }
     """
     try:
         payload = request.get_json(force=True) or {}
         limit = int(payload.get("limit", 300))
 
-        # 1) Current prompt (prefer 'content', fallback to legacy 'text')
+        # 1) Current prompt
         msgs = payload.get("messages") or []
         last_user_msg = None
         for m in reversed(msgs[-10:]):
@@ -806,49 +787,33 @@ def assistant_chat():
 
         wants_chart = bool(re.search(r"\b(plot|chart|graph|visual|time series|line|bar|area|scatter)\b", prompt, re.I))
 
-        # 2) Snapshot schema + human notes to steer good joins
+        # 2) Schema snapshot
         with get_connection() as conn:
             schema = _fetch_schema(conn)
 
         schema_notes = {
             "entities": {
-                "measurements": {
-                    "keys": ["measurement_id", "dataset_id", "parameter_id", "sampling_point_id", "quality_flag_id", "ts", "value", "unit"],
-                },
-                "parameters": {
-                    "keys": ["parameter_id", "code", "display_name", "standard_unit"],
-                },
-                "sampling_points": {
-                    "keys": ["sampling_point_id", "client_id", "code", "name", "lat", "lon"],
-                },
-                "datasets": {
-                    "keys": ["dataset_id", "client_id", "uploaded_at", "waterbody_id"],
-                },
-                "quality_flags": {
-                    "keys": ["quality_flag_id", "code"],
-                }
+                "measurements": {"keys": ["measurement_id","dataset_id","parameter_id","sampling_point_id","quality_flag_id","ts","value","unit"]},
+                "parameters": {"keys": ["parameter_id","code","display_name","standard_unit"]},
+                "sampling_points": {"keys": ["sampling_point_id","client_id","code","name","lat","lon"]},
+                "datasets": {"keys": ["dataset_id","client_id","uploaded_at","waterbody_id"]},
+                "quality_flags": {"keys": ["quality_flag_id","code"]},
             },
             "joins": [
                 "measurements.parameter_id = parameters.parameter_id",
                 "measurements.sampling_point_id = sampling_points.sampling_point_id",
                 "measurements.quality_flag_id = quality_flags.quality_flag_id",
-                "measurements.dataset_id = datasets.dataset_id"
+                "measurements.dataset_id = datasets.dataset_id",
             ],
             "notes": [
                 "Prefer p.code for parameter identities.",
                 "sampling_points.lat/lon are available for mapping.",
-                "Use date_trunc for rollups (day, month)."
-            ]
+                "Use date_trunc for rollups (day, month).",
+            ],
         }
 
         user_content = json.dumps(
-            {
-                "schema": schema,
-                "schema_notes": schema_notes,
-                "prompt": prompt,
-                "wants_chart": wants_chart,
-                "policy": "read_only_select_only"
-            },
+            {"schema": schema, "schema_notes": schema_notes, "prompt": prompt, "wants_chart": wants_chart, "policy": "read_only_select_only"},
             ensure_ascii=False
         )
 
@@ -878,7 +843,7 @@ def assistant_chat():
             "rows": None,
         }
 
-        # 4) If we got SQL, run it read-only and attach rows/columns
+        # 4) Run SQL if present
         sql = (model_json.get("sql") or "").strip()
         columns = None
         rows = None
@@ -893,9 +858,8 @@ def assistant_chat():
             except Exception as se:
                 result["sql_error"] = str(se)
 
-        # 5) If the user wanted a chart but the model forgot, infer a safe default
+        # 5) Fallback chart if user hinted and model forgot
         if wants_chart and not result.get("chart") and columns and rows:
-            # pick first column as x; any numeric columns as series
             def is_num_col(col):
                 for r in rows:
                     v = r.get(col)
@@ -906,7 +870,6 @@ def assistant_chat():
             x = columns[0]
             y_series = [c for c in columns[1:] if is_num_col(c)]
             if y_series:
-                # Heuristic: if x looks like a date bucket, prefer line/area; otherwise bar
                 kind = "line" if re.search(r"(date|day|month|year|ts)", x, re.I) else "bar"
                 result["chart"] = {"type": kind, "x": x, "series": y_series}
 
@@ -915,6 +878,7 @@ def assistant_chat():
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
-    
+
 if __name__ == "__main__":
+    # Ensure you run with Python 3.10+ (for `str | None` union syntax)
     app.run(port=8000, debug=True)

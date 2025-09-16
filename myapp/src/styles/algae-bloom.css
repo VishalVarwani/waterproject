@@ -10,11 +10,28 @@
 .ab-banner--watch { background: #fff8e1; color:#8d6e00; }
 .ab-banner--alert { background: #ffebee; color:#b71c1c; }
 .ab-banner--na    { background: #f3f4f6; color:#374151; }
+.ab-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
 
+/* The sampling point part (e.g., "— Presa") */
+.ab-suffix {
+  color: #6b7280;          /* gray-600 */
+  font-size: 1.1rem;       /* a bit smaller than the h2 */
+  font-weight: 500;
+}
+
+/* Optional tweaks by kind */
+.ab-suffix--one  { color: #4b5563; font-weight: 600; } /* single point (slightly bolder) */
+.ab-suffix--many { color: #6b7280; }                   /* "N points" */
+.ab-suffix--all  { color: #9ca3af; }                   /* "All sampling points" (lighter) */
 .ab-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap:46px  ;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap:26px  ;
 }
 .ab-card {
   display: grid;

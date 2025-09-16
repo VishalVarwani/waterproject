@@ -1,4 +1,3 @@
-// src/components/AlgaeBloomWatch.jsx
 import dayjs from 'dayjs'
 import { useContext, useMemo } from 'react'
 import { FiltersContext } from '../utils/filtersContext'
@@ -57,7 +56,11 @@ export default function AlgaeBloomWatch() {
     []
 
   // ✅ Respect only the Sampling Point filter
-  const selectedPoints = new Set(ctx?.selectedPoints || [])
+  const selectedPointsArr = ctx?.selectedPoints || []
+  const selectedPoints = new Set(selectedPointsArr)
+  const totalPoints = ctx?.rawData?.sampling_points?.length || 0
+  const spById = ctx?.spById || {}
+
   const data = useMemo(() => {
     if (!selectedPoints.size) return base
     return base.filter(r => {
@@ -65,6 +68,18 @@ export default function AlgaeBloomWatch() {
       return selectedPoints.has(sp)
     })
   }, [base, selectedPoints])
+
+  // Header suffix parts with metadata for styling
+  const headerInfo = useMemo(() => {
+    if (!selectedPointsArr.length) return { text: 'All sampling points', kind: 'all' }
+    if (totalPoints > 0 && selectedPointsArr.length === totalPoints) return { text: 'All sampling points', kind: 'all' }
+    if (selectedPointsArr.length === 1) {
+      const id = selectedPointsArr[0]
+      const name = spById[id]?.name || id
+      return { text: name, kind: 'one' }
+    }
+    return { text: `${selectedPointsArr.length} points`, kind: 'many' }
+  }, [selectedPointsArr, spById, totalPoints])
 
   const items = useMemo(() => {
     return BLOOM_CODES.map(code => {
@@ -94,7 +109,14 @@ export default function AlgaeBloomWatch() {
   return (
     <section className="section" aria-label="Algae Bloom Watch">
       <div className="section__header">
-        <h2 className="section__title">Algae Bloom Watch</h2>
+        <h2 className="section__title ab-title">
+          Algae Bloom Watch -
+          {headerInfo.text && (
+            <span className={`ab-suffix ab-suffix--${headerInfo.kind}`}>
+              &nbsp;{headerInfo.text}
+            </span>
+          )}
+        </h2>
         <div className={`ab-banner ab-banner--${worst.level}`}>
           {worst.level === 'alert' && 'High risk conditions detected'}
           {worst.level === 'watch' && 'Elevated bloom indicators'}

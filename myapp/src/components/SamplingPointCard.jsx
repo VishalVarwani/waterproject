@@ -31,26 +31,7 @@ export default function SamplingPointCard({
         </span>
       </div>
 
-      <div className="card__content">
-        {stats ? (
-          <ul className="kpi-list">
-            <li>
-              <span className="kpi-label">Min</span>
-              <span className="kpi-value">{fmt(stats.min)} {unit || ''}</span>
-            </li>
-            <li>
-              <span className="kpi-label">Mean</span>
-              <span className="kpi-value">{fmt(stats.mean)} {unit || ''}</span>
-            </li>
-            <li>
-              <span className="kpi-label">Max</span>
-              <span className="kpi-value">{fmt(stats.max)} {unit || ''}</span>
-            </li>
-          </ul>
-        ) : (
-          <p className="muted">No data in range</p>
-        )}
-      </div>
+     
 
       <div className="card__footer">
         <span className="muted small">
