@@ -44,7 +44,13 @@ from utils import allowed_file, json_error, content_sha256, clamp_preview
 settings = Settings()
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = settings.max_upload_mb * 1024 * 1024
-CORS(app, resources={r"/*": {"origins": settings.cors_origins}})
+CORS(app, resources={r"/*": {"origins": settings.cors_origins}},
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
+    expose_headers=[],
+    supports_credentials=False,  # set True only if you actually use cookies
+    max_age=86400,
+     )
 
 # In-memory session cache for /ingest/map → /ingest/persist
 SESSION_CACHE: Dict[str, Dict[str, Any]] = {}
@@ -202,7 +208,21 @@ def auth_login():
     except Exception as e:
         return json_error(str(e), 500)
 
+@app.after_request
+def add_cors_headers(resp):
+    # Ensure preflight/normal responses always include CORS for your dev origin
+    origin = resp.headers.get("Access-Control-Allow-Origin")
+    if not origin:
+        # pick first allowed origin (or echo if you prefer)
+        if isinstance(settings.cors_origins, (list, tuple)) and settings.cors_origins:
+            resp.headers["Access-Control-Allow-Origin"] = settings.cors_origins[0]
+        else:
+            resp.headers["Access-Control-Allow-Origin"] = "http://localhost:5173"
 
+    resp.headers.setdefault("Vary", "Origin")
+    resp.headers.setdefault("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+    resp.headers.setdefault("Access-Control-Allow-Headers", "Content-Type,Authorization")
+    return resp
 @app.post("/ingest/map")
 def ingest_map():
     try:
