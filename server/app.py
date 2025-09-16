@@ -3,6 +3,7 @@ from __future__ import annotations
 import os, sys, io, json, re, uuid, hashlib, traceback, decimal
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import date, datetime
+import re
 
 from flask import Flask, request, jsonify, make_response
 
@@ -42,7 +43,7 @@ ALLOWED_ORIGINS = set(settings.cors_origins)
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = settings.max_upload_mb * 1024 * 1024
-
+_UNIT_IN_BRACKETS = re.compile(r"\s*\[[^\]]+\]\s*$")
 # ---- Precise CORS (manual, no Flask-CORS) ----
 def _normalize_origin(o: str | None) -> str | None:
     if not o:
@@ -62,7 +63,44 @@ def _handle_preflight():
         resp.headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,DELETE,OPTIONS"
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
         return resp
+def _score_header_row(row_vals) -> float:
+    # prefer rows with many non-empty strings and few numeric-only cells
+    non_empty = sum(v is not None and str(v).strip() != "" for v in row_vals)
+    texty    = sum(bool(re.search(r"[A-Za-z]", str(v) or "")) for v in row_vals)
+    numlike  = sum(bool(re.fullmatch(r"\s*[-+]?\d*\.?\d+(e[-+]?\d+)?\s*", str(v) or "", re.I)) for v in row_vals)
+    uniq     = len(set(str(v).strip().lower() for v in row_vals if v is not None and str(v).strip() != ""))
+    # reward text and uniqueness, penalize all-numeric rows
+    return (texty + 0.5 * uniq) - 0.75 * numlike + 0.1 * non_empty
 
+def _detect_header_index(df_noheader: pd.DataFrame, scan_rows: int = 30) -> int:
+    scan = min(scan_rows, len(df_noheader))
+    best_i, best_score = 0, float("-inf")
+    for i in range(scan):
+        score = _score_header_row(df_noheader.iloc[i].tolist())
+        if score > best_score:
+            best_i, best_score = i, score
+    return best_i
+
+def _read_table_with_header_detection(raw: bytes, filename: str, sheet: Optional[str]):
+    is_excel = filename.lower().endswith((".xlsx", ".xls"))
+    if is_excel:
+        xls = pd.ExcelFile(io.BytesIO(raw))
+        if not sheet:
+            sheet = xls.sheet_names[0]
+        # first pass: no header
+        df0 = pd.read_excel(xls, sheet_name=sheet, header=None)
+        hdr = _detect_header_index(df0)
+        # second pass: with detected header index
+        df  = pd.read_excel(xls, sheet_name=sheet, header=hdr)
+        return df, xls.sheet_names, sheet
+    else:
+        # CSV
+        buf = io.BytesIO(raw)
+        df0 = pd.read_csv(buf, header=None)
+        hdr = _detect_header_index(df0)
+        buf.seek(0)
+        df  = pd.read_csv(buf, header=hdr)
+        return df, ["csv"], None
 @app.after_request
 def _add_cors_headers(resp):
     origin_raw = request.headers.get("Origin")
@@ -90,9 +128,38 @@ SYSTEM_PROMPT = (
     "For category='meta', set unit_map_to='not_applicable'. "
     "Never map timestamps, ids, coordinates, or site/station fields to parameters. "
     "If unsure about map_to, use map_to='unknown' with confidence<=0.5."
+
+    "FAMILY DISAMBIGUATION RULES (follow strictly):\n"
+    "- PHOSPHORUS:\n"
+    "  • total_phosphorus  = all P (organic+inorganic, dissolved+particulate). Synonyms: 'total phosphorus', 'TP', "
+    "    'P total', 'Ptot'.\n"
+    "  • phosphate         = dissolved reactive P (orthophosphate). Synonyms: 'phosphate', 'orthophosphate', "
+    "    'PO4-P', 'PO4', 'SRP', 'DRP', 'reactive phosphorus'.\n"
+    "  ⚠️ Never map total_phosphorus as phosphate, and never map phosphate as total_phosphorus.\n"
+    "  • Headers like 'PO4-P (mg/L as P)' → phosphate.\n"
+    "\n"
+    "- NITROGEN:\n"
+    "  • total_nitrogen    = all N. Synonyms: 'Total Nitrogen', 'TN'.\n"
+    "  • nitrate           = NO3 species. Synonyms: 'nitrate', 'NO3-N', 'NO3'.\n"
+    "  • nitrite           = NO2 species. Synonyms: 'nitrite', 'NO2-N', 'NO2'.\n"
+    "  • ammonium          = NH4 species. Synonyms: 'ammonium', 'NH4-N', 'NH4+'.\n"
+    "  • total kjeldahl nitrogen (TKN) → organic_nitrogen (conventionally organic N + NH4).\n"
+    "  ⚠️ Do NOT map species (nitrate/nitrite/ammonium) to total_nitrogen, and do NOT map total_nitrogen to any species.\n"
+    "\n"
+    "- PIGMENTS:\n"
+    "  • chlorophyll_a     = 'chlorophyll a', 'chl-a', 'Chl a', 'chlorophyll_a'.\n"
+    "  • pheopigments      = 'pheophytin', 'pheopigments', 'phaeophytin a'.\n"
+    "  ⚠️ Never map pheopigments/pheophytin to chlorophyll_a, and never map chlorophyll_a to pheopigments.\n"
+    "\n"
+    "UNITS:\n"
+    "- Choose a unit ONLY if it appears clearly next to the header (e.g., 'NO3-N (mg/L)'). "
+    "Do not infer units from the parameter meaning. "
+    "If no unit text is present, use 'not_present'. "
 )
 
 USER_PROMPT_TEMPLATE = """Task:
+Use the vocabularies and the FAMILY DISAMBIGUATION RULES given in the system prompt.
+
 For each raw header below, output a JSON object with:
 - category: "parameter" or "meta"
 - map_to:
@@ -231,7 +298,79 @@ def auth_login():
     except Exception as e:
         traceback.print_exc()
         return json_error(str(e), 500)
+@app.post("/ingest/sheets")
+def ingest_sheets():
+    """
+    Return available sheets for an uploaded file WITHOUT mapping.
+    Body: multipart/form-data with "file"
+    Response: { kind: "csv"|"excel", available_sheets: ["Sheet1", ...] }
+    """
+    try:
+        if "file" not in request.files:
+            return json_error("missing file", 400)
+        f = request.files["file"]
+        raw = f.read()
+        if not raw:
+            return json_error("empty upload", 400)
 
+        is_excel = f.filename.lower().endswith((".xlsx", ".xls"))
+        if is_excel:
+            xls = pd.ExcelFile(io.BytesIO(raw))
+            return jsonify({
+                "kind": "excel",
+                "available_sheets": xls.sheet_names or []
+            })
+        else:
+            # treat as CSV (single logical sheet)
+            return jsonify({
+                "kind": "csv",
+                "available_sheets": ["csv"]
+            })
+    except Exception as e:
+        traceback.print_exc()
+        return json_error(str(e), 500)
+@app.post("/ingest/override_units")
+def ingest_override_units():
+    """
+    Body: { session_id, overrides:[{column, unit}, ...] }
+    Effect: rename in-session df_h columns from "param" -> "param [unit]" (if no unit yet).
+    Returns fresh preview.
+    """
+    try:
+        data = request.get_json(force=True) or {}
+        sid = data.get("session_id")
+        overrides = data.get("overrides") or []
+        sess = SESSION_CACHE.get(sid)
+        if not sess:
+            return json_error("invalid session_id", 400)
+
+        df_h: pd.DataFrame = sess.get("df_h")
+        if not isinstance(df_h, pd.DataFrame) or df_h.empty:
+            return json_error("no dataframe for session", 400)
+
+        rename_map = {}
+        for item in overrides:
+            col = str(item.get("column") or "").strip()
+            unit = str(item.get("unit") or "").strip()
+            if not col or not unit:
+                continue
+            if col in df_h.columns and not _UNIT_IN_BRACKETS.search(col):
+                rename_map[col] = f"{col} [{unit}]"
+
+        if rename_map:
+            df_h = df_h.rename(columns=rename_map)
+            sess["df_h"] = df_h
+
+        preview = clamp_preview(df_h, rows=20, cols=30)
+        return jsonify({
+            "columns": list(df_h.columns.astype(str)),
+            "preview": preview,
+            "row_count": int(len(df_h)),
+            "col_count": int(df_h.shape[1]),
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return json_error(str(e), 500)
 @app.post("/ingest/map")
 def ingest_map():
     try:
@@ -246,20 +385,13 @@ def ingest_map():
         if not raw:
             return json_error("empty upload", 400)
 
-        # Read CSV/XLSX
-        is_excel = f.filename.lower().endswith((".xlsx", ".xls"))
-        if is_excel:
-            xls = pd.ExcelFile(io.BytesIO(raw))
-            available_sheets = xls.sheet_names
-            pick = sheet or (available_sheets[0] if available_sheets else None)
-            if not pick:
-                return json_error("no sheet found", 400)
-            df = pd.read_excel(xls, sheet_name=pick)
-            sheet_name = pick
-        else:
-            df = pd.read_csv(io.BytesIO(raw))
-            available_sheets = ["csv"]
-            sheet_name = None
+        # ---- ONLY CHANGE STARTS HERE ----
+        try:
+            df, available_sheets, sheet_name = _read_table_with_header_detection(raw, f.filename, sheet)
+        except Exception as e:
+            traceback.print_exc()
+            return json_error(str(e), 400)
+        # ---- ONLY CHANGE ENDS HERE ----
 
         if df is None or df.empty:
             return json_error("empty dataframe", 400)
@@ -346,13 +478,13 @@ def ingest_map():
             sampling_points = []
 
         try:
+            is_excel = f.filename.lower().endswith((".xlsx", ".xls"))
             waterbody = resolve_waterbody(
                 df=df,
                 filename=f.filename,
                 sheet_names=[sheet_name] if (is_excel and sheet_name) else ["csv"]
             )
-        except Exception as e:
-            # Log and continue; don't break ingestion if LLM JSON is invalid
+        except Exception:
             traceback.print_exc()
             waterbody = None
 
@@ -370,7 +502,7 @@ def ingest_map():
         preview = clamp_preview(df_h, rows=20, cols=30)
         return jsonify({
             "columns": list(df_h.columns.astype(str)),
-            "preview": preview,  # list[dict]
+            "preview": preview,
             "sampling_points": sampling_points,
             "availableSheets": available_sheets,
             "waterbody": waterbody,
@@ -381,7 +513,30 @@ def ingest_map():
     except Exception as e:
         traceback.print_exc()
         return json_error(str(e), 500)
+@app.delete("/datasets/<dataset_id>")
+def delete_dataset(dataset_id):
+    try:
+        client_id = request.args.get("client_id")
+        if not client_id:
+            return json_error("client_id is required", 400)
 
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                # Only allow deleting your own dataset
+                cur.execute(
+                    "DELETE FROM public.datasets WHERE dataset_id = %s AND client_id = %s RETURNING dataset_id",
+                    (dataset_id, client_id),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return json_error("dataset not found", 404)
+            conn.commit()
+
+        # Measurements are removed via ON DELETE CASCADE
+        return jsonify({"ok": True, "deleted": dataset_id})
+    except Exception as e:
+        traceback.print_exc()
+        return json_error(str(e), 500)
 @app.post("/ingest/persist")
 def ingest_persist():
     try:

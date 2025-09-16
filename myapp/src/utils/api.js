@@ -53,8 +53,13 @@ export const api = {
     http("GET",
       `/analytics/anomalies?client_id=${encodeURIComponent(clientId)}&dataset_id=${encodeURIComponent(datasetId)}`
     ),
-
-
+ deleteDataset: ({ clientId, datasetId }) =>
+    http("DELETE", `/datasets/${encodeURIComponent(datasetId)}?client_id=${encodeURIComponent(clientId)}`),
+ ingestSheets: (file) => {
+    const form = new FormData();
+    form.append("file", file);
+    return http("POST", "/ingest/sheets", form, true);
+  },
   // ingestion endpoints already in your project (kept for completeness)
   ingestMap: (file, sheet) => {
     const form = new FormData();
@@ -62,6 +67,12 @@ export const api = {
     if (sheet) form.append("sheet", sheet);
     return http("POST", "/ingest/map", form, true);
   },
+   // NEW: apply units to columns in current session
+  ingestOverrideUnits: ({ sessionId, overrides }) =>
+    http("POST", "/ingest/override_units", {
+      session_id: sessionId,
+      overrides,
+    }),
    ingestPersist: ({
     clientId, sessionId, fileName, sheetName,
     useContentHash = true, valueQualifier = "", email,
