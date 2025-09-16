@@ -16,7 +16,7 @@ class Settings:
         default_factory=lambda: _parse_origins(
             os.getenv(
                 "CORS_ORIGINS",
-                "http://localhost:5173,https://waterproject-34lr.onrender.com"
+                "http://localhost:5173, https://waterproject-34lr.onrender.com"
             )
         )
     )
