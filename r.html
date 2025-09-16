@@ -1,290 +1,505 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>e.wai — Sign in</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-
-<style>
-  :root{
-    --bg:#0b1220;            /* deep navy */
-    --panel:#121a2b;         /* card */
-    --panel-2:#0e1626;       /* alt */
-    --accent:#70d7ff;        /* cyan */
-    --accent-2:#8ae6c5;      /* mint */
-    --danger:#ff6b8a;
-    --muted:#8b95ad;
-    --text:#eaf0ff;
-    --shadow: 0 20px 60px rgba(0,0,0,.45);
-    --radius: 18px;
-  }
-  *{box-sizing:border-box}
-  html,body{height:100%}
-  body{
-    margin:0; font-family:Inter,system-ui,Segoe UI,Roboto,Arial;
-    color:var(--text);
-    background:
-      radial-gradient(1200px 700px at 15% -10%, #162740 0%, transparent 55%) no-repeat,
-      radial-gradient(800px 500px at 85% 110%, #162740 0%, transparent 60%) no-repeat,
-      var(--bg);
-    overflow:hidden;
-  }
-  /* Subtle animated orbs */
-  .orb{
-    position:fixed; inset:auto; width:520px; height:520px; border-radius:50%;
-    filter:blur(60px); opacity:.25; z-index:0; pointer-events:none;
-    background: conic-gradient(from 120deg, #70d7ff, #8ae6c5, #70d7ff);
-    animation: float 18s ease-in-out infinite alternate;
-  }
-  .orb.o1{ top:-180px; left:-140px; transform:scale(.9) }
-  .orb.o2{ bottom:-220px; right:-160px; animation-delay: 1.2s; transform:scale(.8) }
-  @keyframes float{
-    to{ transform: translateY(40px) translateX(20px) scale(1) rotate(6deg) }
-  }
-
-  .wrap{
-    position:relative; z-index:1; height:100%;
-    display:grid; grid-template-columns: 1.1fr 1fr; gap:0;
-  }
-  @media (max-width:980px){ .wrap{ grid-template-columns: 1fr } }
-
-  /* Left side — brand */
-  .brand-side{
-    display:flex; align-items:center; justify-content:center; padding:40px;
-  }
-  .brand-card{
-    width:min(720px, 92%); padding:36px; border-radius: var(--radius);
-    background:
-      linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02)),
-      var(--panel);
-    border:1px solid rgba(255,255,255,.08);
-    box-shadow: var(--shadow);
-    position:relative; overflow:hidden;
-  }
-  .brand-head{
-    display:flex; align-items:center; gap:12px; margin-bottom:8px;
-    letter-spacing:.3px;
-  }
-  .logo-dot{
-    width:12px; height:12px; border-radius:50%;
-    background: radial-gradient(circle at 30% 30%, #fff, #70d7ff 35%, #0ea5b1 100%);
-    box-shadow: 0 0 18px rgba(112,215,255,.8);
-  }
-  .brand-title{ font-weight:800; font-size:20px }
-  .brand-big{
-    font-size:36px; font-weight:800; line-height:1.1; margin:14px 0 12px 0;
-    background: linear-gradient(90deg, var(--accent), var(--accent-2));
-    -webkit-background-clip:text; background-clip:text; color:transparent;
-  }
-  .brand-sub{ color:var(--muted) }
-  .badge{
-    display:inline-flex; gap:8px; align-items:center;
-    padding:8px 12px; border:1px solid rgba(255,255,255,.1);
-    background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
-    border-radius:12px; color:#a7f3d0; font-weight:600; font-size:12px; margin-top:16px;
-  }
-  .grid-kpis{
-    display:grid; gap:12px; grid-template-columns: repeat(3,1fr); margin-top:18px;
-  }
-  .kpi{
-    padding:14px; border-radius:14px;
-    background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
-    border:1px solid rgba(255,255,255,.08);
-  }
-  .kpi h4{ margin:0 0 6px 0; font-size:12px; color:var(--muted); letter-spacing:.3px }
-  .kpi .v{ font-size:22px; font-weight:800 }
-
-  /* Right side — auth */
-  .auth-side{
-    display:flex; align-items:center; justify-content:center; padding:40px;
-    background:
-      linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.01)),
-      var(--panel-2);
-    border-left:1px solid rgba(255,255,255,.06);
-  }
-  .auth-card{
-    width:min(440px, 92%); padding:28px; border-radius: var(--radius);
-    background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)), var(--panel);
-    border:1px solid rgba(255,255,255,.08);
-    box-shadow: var(--shadow);
-  }
-  .auth-head{
-    display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;
-  }
-  .auth-head .brand-mini{
-    display:flex; align-items:center; gap:10px; font-weight:800;
-  }
-  .muted{ color:var(--muted) }
-  form{ margin-top:8px }
-  label{ display:block; font-size:12px; color:var(--muted); margin-bottom:6px; letter-spacing:.3px }
-  .field{
-    position:relative; margin-bottom:14px;
-  }
-  input[type="email"], input[type="password"]{
-    width:100%; padding:12px 44px 12px 12px;
-    color:var(--text); background:#0f1728; border:1px solid rgba(255,255,255,.12);
-    border-radius:12px; outline:none; transition:border .15s ease, box-shadow .15s ease;
-  }
-  input:focus{ border-color:var(--accent); box-shadow: 0 0 0 4px rgba(112,215,255,.15) }
-  .toggle{
-    position:absolute; top:50%; right:10px; transform:translateY(-50%);
-    padding:6px 10px; border-radius:10px; border:1px solid rgba(255,255,255,.08);
-    background:rgba(255,255,255,.03); color:var(--muted); cursor:pointer; font-size:12px;
-  }
-  .row{
-    display:flex; align-items:center; justify-content:space-between; gap:12px; margin:8px 0 16px;
-  }
-  .row a{ color:var(--accent); text-decoration:none }
-  .btn{
-    width:100%; padding:12px 14px; border-radius:12px; border:none; cursor:pointer;
-    background: linear-gradient(180deg, var(--accent), #86e0ff);
-    color:#082235; font-weight:800; letter-spacing:.3px; box-shadow:0 8px 24px rgba(112,215,255,.35);
-  }
-  .btn:hover{ filter:brightness(1.05) }
-  .btn-ghost{
-    width:100%; padding:12px 14px; border-radius:12px; margin-top:10px;
-    background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
-    border:1px solid rgba(255,255,255,.12); color:var(--text); cursor:pointer;
-  }
-  .hr{
-    display:flex; align-items:center; gap:12px; margin:14px 0;
-  }
-  .hr span{ height:1px; flex:1; background:linear-gradient(90deg, transparent, rgba(255,255,255,.12), transparent) }
-  .err{
-    display:none; margin-top:10px; font-size:13px; color:#fff;
-    background: linear-gradient(180deg, rgba(255,107,138,.22), rgba(255,107,138,.12));
-    border:1px solid rgba(255,255,255,.1); padding:10px 12px; border-radius:12px;
-  }
-  .foot{ margin-top:14px; font-size:12px; color:var(--muted); text-align:center }
-</style>
+  <meta charset="UTF-8" />
+  <title>Ingestion — Upload · Select Sheet · Map & Harmonize · Save</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Tailwind CSS (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Icons (Lucide) -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- XLSX for Excel parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- PapaParse for CSV parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    html, body { background: #ffffff; }
+    .step-active { border-color: #2563eb; box-shadow: 0 1px 0 0 #2563eb inset; }
+    .badge { font-size: 0.75rem; padding: 0.125rem 0.5rem; border-radius: 9999px; }
+    .scroll-thin::-webkit-scrollbar{height:8px;width:8px}
+    .scroll-thin::-webkit-scrollbar-thumb{background:#e5e7eb;border-radius:8px}
+    .glass { background: rgba(255,255,255,0.8); backdrop-filter: blur(6px); }
+    .hidden-input { display:none; }
+  </style>
 </head>
-<body>
-  <div class="orb o1"></div>
-  <div class="orb o2"></div>
+<body class="text-gray-900">
+  <!-- Header -->
+  <header class="border-b">
+    <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7 text-blue-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 12a9 9 0 1018 0 9 9 0 10-18 0Zm9-6v6l4 2"/>
+        </svg>
+        <h1 class="text-xl font-semibold">Data Ingestion</h1>
+        <span class="badge bg-blue-50 text-blue-700 border border-blue-200 ml-2">Pipeline</span>
+      </div>
+      <nav class="flex items-center gap-2 text-sm">
+        <a class="px-3 py-2 rounded-lg hover:bg-gray-100" href="#">Home</a>
+        <a class="px-3 py-2 rounded-lg bg-gray-100 font-medium" href="#">Ingestion</a>
+        <a class="px-3 py-2 rounded-lg hover:bg-gray-100" href="#">Analytics</a>
+      </nav>
+    </div>
+  </header>
 
-  <div class="wrap">
-    <!-- Brand / left -->
-    <section class="brand-side">
-      <div class="brand-card" aria-hidden="true">
-        <div class="brand-head">
-          <div class="logo-dot"></div>
-          <div class="brand-title">e.wai</div>
+  <!-- Progress Steps -->
+  <section class="max-w-6xl mx-auto px-4 mt-6">
+    <ol class="grid grid-cols-1 sm:grid-cols-4 gap-3">
+      <li id="step1" class="border rounded-xl p-3 flex items-center gap-3 step-active">
+        <div class="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center text-sm font-semibold">1</div>
+        <div>
+          <div class="text-sm font-semibold">Upload File</div>
+          <div class="text-xs text-gray-500">Excel (.xlsx/.xls) or CSV</div>
         </div>
-        <div class="brand-big">Welcome to e.wai</div>
-        <div class="brand-sub">Secure access to your water-quality datasets, dashboards, and analytics.</div>
-        <div class="badge">● SWIM Platform • Secure by design</div>
+      </li>
+      <li id="step2" class="border rounded-xl p-3 flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-gray-200 text-gray-700 flex items-center justify-center text-sm font-semibold">2</div>
+        <div>
+          <div class="text-sm font-semibold">Select Sheet</div>
+          <div class="text-xs text-gray-500">Shown if multiple detected</div>
+        </div>
+      </li>
+      <li id="step3" class="border rounded-xl p-3 flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-gray-200 text-gray-700 flex items-center justify-center text-sm font-semibold">3</div>
+        <div>
+          <div class="text-sm font-semibold">Map & Harmonize</div>
+          <div class="text-xs text-gray-500">Preview columns & map</div>
+        </div>
+      </li>
+      <li id="step4" class="border rounded-xl p-3 flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-gray-200 text-gray-700 flex items-center justify-center text-sm font-semibold">4</div>
+        <div>
+          <div class="text-sm font-semibold">Save to Database</div>
+          <div class="text-xs text-gray-500">Validate & send</div>
+        </div>
+      </li>
+    </ol>
+  </section>
 
-        <div class="grid-kpis">
-          <div class="kpi">
-            <h4>Uptime</h4>
-            <div class="v">99.98%</div>
-          </div>
-          <div class="kpi">
-            <h4>Data Points</h4>
-            <div class="v">12.6M</div>
-          </div>
-          <div class="kpi">
-            <h4>Lakes & Rivers</h4>
-            <div class="v">184</div>
-          </div>
+  <!-- Main content -->
+  <main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
+
+    <!-- Upload Card -->
+    <section class="border rounded-2xl p-6">
+      <div class="flex items-start justify-between">
+        <div>
+          <h2 class="text-lg font-semibold">1) Upload file</h2>
+          <p class="text-sm text-gray-600">Drag & drop or choose a file. Supported: <strong>.xlsx, .xls, .csv</strong></p>
         </div>
+        <span id="badge-upload" class="badge bg-gray-100 text-gray-700 border border-gray-200">Pending</span>
+      </div>
+
+      <label for="file-input" class="mt-4 block">
+        <div id="dropzone" class="mt-2 border-2 border-dashed rounded-xl p-8 text-center hover:bg-gray-50 transition cursor-pointer">
+          <div class="mx-auto w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
+            <i data-lucide="upload" class="w-6 h-6"></i>
+          </div>
+          <p class="mt-3 font-medium">Choose a file or drop it here</p>
+          <p class="text-sm text-gray-500">Max ~20MB recommended for browser parsing</p>
+        </div>
+        <input id="file-input" type="file" class="hidden-input" accept=".xlsx,.xls,.csv" />
+      </label>
+
+      <div id="file-meta" class="mt-4 hidden text-sm text-gray-700"></div>
+    </section>
+
+    <!-- Sheet Select -->
+    <section class="border rounded-2xl p-6">
+      <div class="flex items-start justify-between">
+        <div>
+          <h2 class="text-lg font-semibold">2) Select sheet (if applicable)</h2>
+          <p class="text-sm text-gray-600">If your Excel has multiple sheets, pick one. For CSV, this is auto-selected.</p>
+        </div>
+        <span id="badge-sheet" class="badge bg-gray-100 text-gray-700 border border-gray-200">Waiting</span>
+      </div>
+
+      <div id="sheet-area" class="mt-4">
+        <select id="sheet-select" class="w-full sm:w-80 border rounded-lg p-2 disabled:opacity-50" disabled>
+          <option value="">No file yet</option>
+        </select>
+        <div id="sheet-hint" class="text-xs text-gray-500 mt-2">We’ll auto-select if only one sheet is found.</div>
       </div>
     </section>
 
-    <!-- Auth / right -->
-    <section class="auth-side" role="main">
-      <div class="auth-card" role="region" aria-label="Sign in">
-        <div class="auth-head">
-          <div class="brand-mini">
-            <div class="logo-dot" style="width:10px;height:10px"></div>
-            <div>Sign in to <strong>e.wai</strong></div>
-          </div>
-          <div class="muted">Access your client workspace</div>
+    <!-- Map & Harmonize -->
+    <section class="border rounded-2xl p-6">
+      <div class="flex items-start justify-between">
+        <div>
+          <h2 class="text-lg font-semibold">3) Map & Harmonize</h2>
+          <p class="text-sm text-gray-600">Preview detected columns and map them to standard parameters before saving.</p>
         </div>
+        <span id="badge-map" class="badge bg-gray-100 text-gray-700 border border-gray-200">Locked</span>
+      </div>
 
-        <form id="loginForm" novalidate>
-          <div class="field">
-            <label for="email">Email</label>
-            <input id="email" name="email" type="email" inputmode="email" autocomplete="email"
-                   placeholder="you@company.com" required />
-          </div>
-          <div class="field">
-            <label for="password">Password</label>
-            <input id="password" name="password" type="password" autocomplete="current-password"
-                   placeholder="••••••••" minlength="6" required />
-            <button class="toggle" type="button" id="togglePwd" aria-label="Show password">Show</button>
-          </div>
+      <div class="mt-4 flex flex-wrap gap-3">
+        <button id="btn-map" class="px-4 py-2 rounded-xl bg-blue-600 text-white disabled:opacity-50" disabled>
+          <span class="inline-flex items-center gap-2">
+            <i data-lucide="wand-2" class="w-4 h-4"></i>
+            Map & Harmonize
+          </span>
+        </button>
+        <button id="btn-preview" class="px-4 py-2 rounded-xl border hover:bg-gray-50 disabled:opacity-50" disabled>
+          Preview First Rows
+        </button>
+      </div>
 
-          <div class="row">
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-              <input type="checkbox" id="remember" style="accent-color:#70d7ff"> <span class="muted">Remember me</span>
-            </label>
-            <a href="#" onclick="alert('Hook your password-reset route here')">Forgot password?</a>
-          </div>
-
-          <button class="btn" type="submit">Sign in</button>
-
-          <div class="hr" aria-hidden="true">
-            <span></span><small class="muted">or</small><span></span>
-          </div>
-
-          <button class="btn-ghost" type="button" onclick="alert('Hook your SSO/Google OAuth here')">
-            Continue with SSO
-          </button>
-
-          <div id="errorBox" class="err" role="alert">Invalid credentials. Please check your email and password.</div>
-          <div class="foot">By continuing you agree to our <a href="#" style="color:var(--accent)">Terms</a> and <a href="#" style="color:var(--accent)">Privacy</a>.</div>
-        </form>
+      <!-- Mapping table -->
+      <div id="mapping-wrap" class="mt-6 hidden">
+        <h3 class="font-medium mb-3">Column Mapping</h3>
+        <div class="overflow-auto scroll-thin border rounded-xl">
+          <table class="min-w-full text-sm">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="text-left p-3 font-semibold border-b">Source Column</th>
+                <th class="text-left p-3 font-semibold border-b">Map to Standard</th>
+                <th class="text-left p-3 font-semibold border-b">Unit (optional)</th>
+              </tr>
+            </thead>
+            <tbody id="mapping-body"></tbody>
+          </table>
+        </div>
+        <p class="text-xs text-gray-500 mt-2">Tip: Only map relevant columns (e.g., <em>timestamp, sampling_point, parameter, value, unit</em> or environmental parameters like <em>temperature, ph, dissolved_oxygen</em>).</p>
       </div>
     </section>
+
+    <!-- Save -->
+    <section class="border rounded-2xl p-6">
+      <div class="flex items-start justify-between">
+        <div>
+          <h2 class="text-lg font-semibold">4) Save to Database</h2>
+          <p class="text-sm text-gray-600">Validate your mapping, then send to your backend API.</p>
+        </div>
+        <span id="badge-save" class="badge bg-gray-100 text-gray-700 border border-gray-200">Locked</span>
+      </div>
+
+      <div class="mt-4 flex flex-wrap gap-3">
+        <button id="btn-validate" class="px-4 py-2 rounded-xl border hover:bg-gray-50 disabled:opacity-50" disabled>
+          Validate
+        </button>
+        <button id="btn-save" class="px-4 py-2 rounded-xl bg-emerald-600 text-white disabled:opacity-50" disabled>
+          <span class="inline-flex items-center gap-2">
+            <i data-lucide="database" class="w-4 h-4"></i>
+            Save to Database
+          </span>
+        </button>
+      </div>
+
+      <div id="save-log" class="mt-4 hidden">
+        <pre class="text-xs bg-gray-50 p-3 rounded-lg border overflow-auto max-h-60"></pre>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Toast -->
+  <div id="toast" class="fixed bottom-6 right-6 hidden">
+    <div class="glass border rounded-xl shadow p-4 max-w-sm flex items-start gap-3">
+      <div class="mt-0.5 text-blue-600"><i data-lucide="info" class="w-5 h-5"></i></div>
+      <div class="text-sm" id="toast-msg">Message</div>
+    </div>
   </div>
 
-<script>
-  // Show/Hide password
-  const toggle = document.getElementById('togglePwd');
-  const pwd = document.getElementById('password');
-  toggle.addEventListener('click', ()=>{
-    const isPwd = pwd.type === 'password';
-    pwd.type = isPwd ? 'text' : 'password';
-    toggle.textContent = isPwd ? 'Hide' : 'Show';
-    toggle.setAttribute('aria-label', isPwd ? 'Hide password' : 'Show password');
-  });
+  <script>
+    // Icons
+    window.addEventListener('DOMContentLoaded', () => lucide.createIcons());
 
-  // Dummy validation + submit (replace with real auth)
-  const form = document.getElementById('loginForm');
-  const errorBox = document.getElementById('errorBox');
+    // State
+    let fileBlob = null;
+    let fileType = null; // 'excel' | 'csv'
+    let workbook = null;
+    let sheetNames = [];
+    let selectedSheet = null;
+    let parsedRows = []; // Sampled rows for preview/mapping (array of objects)
+    let columns = [];    // Extracted column names
 
-  form.addEventListener('submit', async (e)=>{
-    e.preventDefault();
-    errorBox.style.display = 'none';
+    const canonicalTargets = [
+      "", "timestamp", "sampling_point", "parameter", "value", "unit",
+      "temperature", "ph", "dissolved_oxygen", "turbidity", "conductivity",
+      "chlorophyll_a", "secchi_depth", "salinity", "redox", "nitrate", "nitrite", "ammonium"
+    ];
 
-    const email = document.getElementById('email').value.trim();
-    const pass  = pwd.value;
+    // Elements
+    const stepEls = [
+      document.getElementById('step1'),
+      document.getElementById('step2'),
+      document.getElementById('step3'),
+      document.getElementById('step4')
+    ];
+    const badgeUpload = document.getElementById('badge-upload');
+    const badgeSheet  = document.getElementById('badge-sheet');
+    const badgeMap    = document.getElementById('badge-map');
+    const badgeSave   = document.getElementById('badge-save');
 
-    // Simple client-side checks
-    const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-    if(!validEmail || pass.length < 6){
-      errorBox.textContent = 'Please enter a valid email and a 6+ character password.';
-      errorBox.style.display = 'block';
-      return;
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('file-input');
+    const fileMeta = document.getElementById('file-meta');
+
+    const sheetSelect = document.getElementById('sheet-select');
+    const btnMap = document.getElementById('btn-map');
+    const btnPreview = document.getElementById('btn-preview');
+    const mappingWrap = document.getElementById('mapping-wrap');
+    const mappingBody = document.getElementById('mapping-body');
+
+    const btnValidate = document.getElementById('btn-validate');
+    const btnSave = document.getElementById('btn-save');
+    const saveLogWrap = document.getElementById('save-log');
+    const saveLog = saveLogWrap.querySelector('pre');
+
+    const toast = document.getElementById('toast');
+    const toastMsg = document.getElementById('toast-msg');
+
+    // Helpers
+    function showToast(msg) {
+      toastMsg.textContent = msg;
+      toast.classList.remove('hidden');
+      setTimeout(() => toast.classList.add('hidden'), 3000);
     }
 
-    // MOCK: emulate server auth. Replace with fetch('/api/login', {method:'POST', body: JSON.stringify({...})})
-    await new Promise(r=>setTimeout(r, 600));
-    const ok = email.toLowerCase().endsWith('@example.com') && pass === 'demo123';
-
-    if(!ok){
-      errorBox.textContent = 'Invalid credentials. Please check your email and password.';
-      errorBox.style.display = 'block';
-      return;
+    function setStepActive(idx) {
+      stepEls.forEach((el, i) => {
+        if (i === idx) el.classList.add('step-active');
+        else el.classList.remove('step-active');
+      });
     }
 
-    // Success — redirect to your client dashboard
-    window.location.href = '/client/index.html'; // change to your route
-  });
-</script>
+    function toArrayBuffer(file) {
+      return new Promise((res, rej) => {
+        const reader = new FileReader();
+        reader.onload = e => res(e.target.result);
+        reader.onerror = rej;
+        reader.readAsArrayBuffer(file);
+      });
+    }
+
+    function toText(file) {
+      return new Promise((res, rej) => {
+        const reader = new FileReader();
+        reader.onload = e => res(e.target.result);
+        reader.onerror = rej;
+        reader.readAsText(file);
+      });
+    }
+
+    function setBadges(upload, sheet, map, save) {
+      if (upload) { badgeUpload.textContent = upload.text; badgeUpload.className = upload.class; }
+      if (sheet)  { badgeSheet.textContent  = sheet.text;  badgeSheet.className  = sheet.class;  }
+      if (map)    { badgeMap.textContent    = map.text;    badgeMap.className    = map.class;    }
+      if (save)   { badgeSave.textContent   = save.text;   badgeSave.className   = save.class;   }
+    }
+
+    function badgeClasses(color, textColor) {
+      return `badge bg-${color}-50 text-${color}-700 border border-${color}-200`;
+    }
+
+    function enable(el, on) {
+      el.disabled = !on;
+    }
+
+    function parseXlsxSheet(name) {
+      // Take first 200 rows for preview/mapping
+      const ws = workbook.Sheets[name];
+      const json = XLSX.utils.sheet_to_json(ws, { defval: null, raw: true });
+      return json.slice(0, 200);
+    }
+
+    function buildMappingTable(cols) {
+      mappingBody.innerHTML = '';
+      cols.forEach(col => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="p-3 border-b align-top">
+            <code class="text-xs bg-gray-100 px-2 py-1 rounded">${col}</code>
+          </td>
+          <td class="p-3 border-b">
+            <select class="w-60 border rounded-lg p-2">
+              ${canonicalTargets.map(t => `<option value="${t}">${t || "— (ignore) —"}</option>`).join('')}
+            </select>
+          </td>
+          <td class="p-3 border-b">
+            <input class="w-40 border rounded-lg p-2" placeholder="e.g., C, mg/L, NTU" />
+          </td>
+        `;
+        mappingBody.appendChild(tr);
+      });
+    }
+
+    function getCurrentMapping() {
+      const rows = [...mappingBody.querySelectorAll('tr')];
+      return rows.map(tr => {
+        const src = tr.querySelector('code').textContent;
+        const target = tr.querySelector('select').value;
+        const unit = tr.querySelector('input').value.trim() || null;
+        return { source: src, target, unit };
+      });
+    }
+
+    // Upload handling
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('bg-gray-50'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('bg-gray-50'));
+    dropzone.addEventListener('drop', async e => {
+      e.preventDefault();
+      dropzone.classList.remove('bg-gray-50');
+      if (e.dataTransfer.files?.length) {
+        await handleFile(e.dataTransfer.files[0]);
+      }
+    });
+    fileInput.addEventListener('change', async e => {
+      if (e.target.files?.length) {
+        await handleFile(e.target.files[0]);
+      }
+    });
+
+    async function handleFile(file) {
+      fileBlob = file;
+      const name = file.name.toLowerCase();
+      fileType = name.endsWith('.csv') ? 'csv' : 'excel';
+
+      fileMeta.classList.remove('hidden');
+      fileMeta.innerHTML = `<strong>Selected:</strong> ${file.name} <span class="text-gray-500">(${Math.round(file.size/1024)} KB)</span>`;
+
+      setBadges(
+        { text: 'Ready', class: badgeClasses('blue','blue') },
+        { text: 'Detecting…', class: badgeClasses('gray','gray') },
+        { text: 'Locked', class: badgeClasses('gray','gray') },
+        { text: 'Locked', class: badgeClasses('gray','gray') },
+      );
+      setStepActive(1); // Sheet selection step visual
+
+      // Reset state
+      workbook = null; sheetNames = []; selectedSheet = null; parsedRows = []; columns = [];
+      mappingWrap.classList.add('hidden');
+      enable(sheetSelect, false);
+      sheetSelect.innerHTML = `<option value="">Detecting sheets…</option>`;
+      enable(btnMap, false); enable(btnPreview, false); enable(btnValidate, false); enable(btnSave, false);
+
+      try {
+        if (fileType === 'excel') {
+          const buf = await toArrayBuffer(file);
+          workbook = XLSX.read(buf, { type: 'array' });
+          sheetNames = workbook.SheetNames || [];
+          if (!sheetNames.length) throw new Error('No sheets detected.');
+          // Populate select
+          sheetSelect.innerHTML = sheetNames.map(s => `<option value="${s}">${s}</option>`).join('');
+          enable(sheetSelect, true);
+          // Auto-select first
+          selectedSheet = sheetNames[0];
+          sheetSelect.value = selectedSheet;
+          parsedRows = parseXlsxSheet(selectedSheet);
+        } else {
+          // CSV acts as a single "sheet"
+          sheetNames = ['CSV'];
+          selectedSheet = 'CSV';
+          sheetSelect.innerHTML = `<option value="CSV">CSV</option>`;
+          enable(sheetSelect, false);
+
+          const text = await toText(file);
+          const parsed = Papa.parse(text, { header: true, dynamicTyping: true, skipEmptyLines: true });
+          parsedRows = (parsed.data || []).slice(0, 200);
+        }
+
+        columns = Object.keys(parsedRows[0] || {});
+        setBadges(
+          null,
+          { text: sheetNames.length > 1 ? 'Select a sheet' : 'Auto-selected', class: badgeClasses('blue','blue') },
+          { text: 'Ready', class: badgeClasses('blue','blue') },
+          { text: 'Locked', class: badgeClasses('gray','gray') },
+        );
+        enable(btnMap, true);
+        enable(btnPreview, true);
+        showToast(`Detected ${columns.length} columns and ${parsedRows.length} rows (sample).`);
+      } catch (err) {
+        console.error(err);
+        setBadges(
+          { text: 'Error', class: badgeClasses('red','red') },
+          { text: 'Waiting', class: badgeClasses('gray','gray') },
+          { text: 'Locked', class: badgeClasses('gray','gray') },
+          { text: 'Locked', class: badgeClasses('gray','gray') },
+        );
+        showToast('Failed to parse file. Please check the format.');
+      }
+    }
+
+    // Sheet change
+    sheetSelect.addEventListener('change', () => {
+      if (fileType !== 'excel') return;
+      selectedSheet = sheetSelect.value;
+      parsedRows = parseXlsxSheet(selectedSheet);
+      columns = Object.keys(parsedRows[0] || {});
+      showToast(`Sheet “${selectedSheet}” selected (${columns.length} columns).`);
+    });
+
+    // Map & Harmonize
+    btnMap.addEventListener('click', () => {
+      if (!columns.length) return showToast('No columns detected.');
+      buildMappingTable(columns);
+      mappingWrap.classList.remove('hidden');
+      setBadges(null, null, { text: 'Mapped (editable)', class: badgeClasses('emerald','emerald') }, null);
+      enable(btnValidate, true);
+      setStepActive(2); // Move highlight to Map step
+    });
+
+    // Preview
+    btnPreview.addEventListener('click', () => {
+      if (!parsedRows.length) return showToast('Nothing to preview.');
+      const sample = parsedRows.slice(0, 5);
+      const msg = `Preview (first 5 rows):\n\n${JSON.stringify(sample, null, 2)}`;
+      saveLogWrap.classList.remove('hidden');
+      saveLog.textContent = msg;
+      showToast('Preview updated below.');
+    });
+
+    // Validate
+    btnValidate.addEventListener('click', () => {
+      const mapping = getCurrentMapping();
+      // Simple checks: ensure at least timestamp/value/sampling_point OR (parameter+value)
+      const targets = new Set(mapping.map(m => m.target).filter(Boolean));
+      const ok = (targets.has('timestamp') && targets.has('value') && targets.has('sampling_point')) ||
+                 (targets.has('parameter') && targets.has('value'));
+      saveLogWrap.classList.remove('hidden');
+      saveLog.textContent = (ok
+        ? 'Validation passed ✅\n\nSuggested payload shape will be generated from mapping.'
+        : 'Validation warning ⚠️\n\nConsider mapping at least {timestamp,value,sampling_point} OR {parameter,value}.'
+      ) + `\n\nCurrent mapping:\n${JSON.stringify(mapping, null, 2)}`;
+      if (ok) {
+        enable(btnSave, true);
+        setBadges(null, null, null, { text: 'Ready', class: badgeClasses('blue','blue') });
+        setStepActive(3); // Save step
+      } else {
+        enable(btnSave, false);
+        setBadges(null, null, null, { text: 'Locked', class: badgeClasses('gray','gray') });
+      }
+    });
+
+    // Save (mock)
+    btnSave.addEventListener('click', async () => {
+      const mapping = getCurrentMapping();
+      // Build a tiny demo payload using first 20 rows + mapping (no real transform here)
+      const payload = {
+        meta: {
+          filename: fileBlob?.name || null,
+          type: fileType,
+          sheet: selectedSheet,
+          columns,
+          rows_sampled: Math.min(parsedRows.length, 20)
+        },
+        mapping,
+        // Only include a small sample to avoid huge previews in UI
+        data_preview: parsedRows.slice(0, 20)
+      };
+
+      // Replace with your real API endpoint:
+      // const resp = await fetch('/api/ingestion', {
+      //   method: 'POST',
+      //   headers: { 'Content-Type': 'application/json' },
+      //   body: JSON.stringify(payload)
+      // });
+
+      saveLogWrap.classList.remove('hidden');
+      saveLog.textContent = `POST /api/ingestion (mock)\n\n${JSON.stringify(payload, null, 2)}`;
+      setBadges(null, null, null, { text: 'Saved (mock)', class: badgeClasses('emerald','emerald') });
+      setStepActive(3);
+      showToast('Mock save complete. Wire the endpoint to persist.');
+    });
+  </script>
 </body>
 </html>

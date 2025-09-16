@@ -6,13 +6,34 @@ import 'leaflet/dist/leaflet.css'
 const DEFAULT_CENTER = [20, 0]
 const DEFAULT_ZOOM = 2
 
-// Custom blue location icon
-const locationIcon = new L.Icon({
+// Icons
+const blueIcon = new L.Icon({
   iconUrl: 'https://www.freeiconspng.com/uploads/blue-location-icon-png-19.png',
-  iconSize: [32, 32],      // tweak if you want larger/smaller
-  iconAnchor: [16, 32],    // point of the icon which will correspond to marker's location
-  popupAnchor: [0, -28],   // where the popup should open relative to the iconAnchor
+  iconSize: [32, 32],
+  iconAnchor: [16, 32],
+  popupAnchor: [0, -28],
 })
+
+const yellowIcon = new L.Icon({
+  iconUrl: '/markers/map-pin.png',
+  iconSize: [32, 32],
+  iconAnchor: [16, 32],
+  popupAnchor: [0, -28],
+})
+
+const redIcon = new L.Icon({
+  iconUrl: '/markers/placeholder.png',
+  iconSize: [32, 32],
+  iconAnchor: [16, 32],
+  popupAnchor: [0, -28],
+});
+
+function iconForStatus(status) {
+  const s = String(status || '').toLowerCase()
+  if (s === 'warn' || s === 'warning' || s === 'watch') return yellowIcon
+  if (s === 'alert' || s === 'unsafe') return redIcon
+  return blueIcon
+}
 
 function FitToMarkers({ points }) {
   const map = useMap()
@@ -21,18 +42,18 @@ function FitToMarkers({ points }) {
     .map(p => [p.lat, p.lon])
 
   if (coords.length === 1) {
-    map.setView(coords[0], 14) // single point: nice close zoom
+    map.setView(coords[0], 14)
   } else if (coords.length > 1) {
     const bounds = L.latLngBounds(coords)
-    map.fitBounds(bounds, { padding: [32, 32] }) // auto-zoom with a little padding
+    map.fitBounds(bounds, { padding: [32, 32] })
   }
   return null
 }
 
-export default function MapView({ points = [], onSelectPoint }) {
+export default function MapView({ points = [], statusById = {}, onSelectPoint }) {
   const valid = points.filter(p => Number.isFinite(p?.lat) && Number.isFinite(p?.lon))
   const center = valid.length ? [valid[0].lat, valid[0].lon] : DEFAULT_CENTER
-  const zoom = valid.length ? 8 : DEFAULT_ZOOM // initial; FitToMarkers will adjust
+  const zoom = valid.length ? 8 : DEFAULT_ZOOM
 
   return (
     <div className="map-card" role="region" aria-label="Map">
@@ -42,22 +63,26 @@ export default function MapView({ points = [], onSelectPoint }) {
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {/* auto-zoom */}
         <FitToMarkers points={valid} />
 
-        {valid.map(p => (
-          <Marker
-            key={p.id}
-            position={[p.lat, p.lon]}
-            icon={locationIcon}
-            eventHandlers={{ click: () => onSelectPoint?.(p.id) }}
-          >
-            <Popup>
-              <strong>{p.name}</strong><br />
-              {p.id}
-            </Popup>
-          </Marker>
-        ))}
+        {valid.map(p => {
+          const status = statusById[p.id] || 'safe'
+          const icon = iconForStatus(status)
+          return (
+            <Marker
+              key={p.id}
+              position={[p.lat, p.lon]}
+              icon={icon}
+              eventHandlers={{ click: () => onSelectPoint?.(p.id) }}
+            >
+              <Popup>
+                <strong>{p.name}</strong><br />
+                {p.id}<br />
+                <em>Status: {String(status)}</em>
+              </Popup>
+            </Marker>
+          )
+        })}
       </MapContainer>
 
       {!valid.length && (
@@ -76,5 +101,7 @@ MapView.propTypes = {
     lat: PropTypes.number,
     lon: PropTypes.number,
   })),
+  // Map from pointId -> 'safe' | 'warn' | 'unsafe' (or 'ok'|'watch'|'alert')
+  statusById: PropTypes.object,
   onSelectPoint: PropTypes.func,
 }

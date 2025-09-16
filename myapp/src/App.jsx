@@ -27,7 +27,6 @@ import { api } from './utils/api'
 
 const SHOW_MAP = true
 
-// Simple protected-route wrapper
 function ProtectedRoute({ user, children }) {
   const location = useLocation()
   if (!user) return <Navigate to="/login" state={{ from: location.pathname }} replace />
@@ -35,7 +34,6 @@ function ProtectedRoute({ user, children }) {
 }
 
 export default function App() {
-  // --- Auth state (SESSION-based; clears on tab close/reload)
   const [user, setUser] = useState(() => {
     try {
       const raw = sessionStorage.getItem('auth_user')
@@ -49,28 +47,21 @@ export default function App() {
   const logout = () => {
     setUser(null)
     try { sessionStorage.removeItem('auth_user') } catch {}
-    if (window.location.pathname !== '/login') {
-      window.location.assign('/login')
-    }
+    if (window.location.pathname !== '/login') window.location.assign('/login')
   }
 
-  // also clear on unload to be strict
   useEffect(() => {
-    const handleUnload = () => {
-      try { sessionStorage.removeItem('auth_user') } catch {}
-    }
+    const handleUnload = () => { try { sessionStorage.removeItem('auth_user') } catch {} }
     window.addEventListener('beforeunload', handleUnload)
     return () => window.removeEventListener('beforeunload', handleUnload)
   }, [])
 
-  // --- API-backed dataset + rows ---
   const [datasets, setDatasets] = useState([])
   const [datasetId, setDatasetId] = useState(() => sessionStorage.getItem('datasetId') || '')
-  const [rawRows, setRawRows] = useState([]) // flat rows from /measurements
+  const [rawRows, setRawRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  // --- Filters (unchanged UI)
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [selectedPoints, setSelectedPoints] = useState([])
@@ -79,7 +70,6 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(false)
   const [primaryParam, setPrimaryParam] = useState('temperature')
 
-  // Load dataset list after login
   useEffect(() => {
     let cancelled = false
     async function run() {
@@ -90,9 +80,7 @@ export default function App() {
         if (cancelled) return
         const items = res.items || []
         setDatasets(items)
-        if (!datasetId && items.length) {
-          setDatasetId(items[0].dataset_id)
-        }
+        if (!datasetId && items.length) setDatasetId(items[0].dataset_id)
       } catch (e) {
         if (!cancelled) setError(String(e.message || e))
       } finally {
@@ -103,12 +91,10 @@ export default function App() {
     return () => { cancelled = true }
   }, [user?.client_id])
 
-  // Persist chosen dataset id (SESSION)
   useEffect(() => {
     if (datasetId) sessionStorage.setItem('datasetId', datasetId)
   }, [datasetId])
 
-  // Load measurements for selected dataset
   useEffect(() => {
     let cancelled = false
     async function run() {
@@ -117,11 +103,7 @@ export default function App() {
       try {
         const res = await api.fetchMeasurements({ clientId: user.client_id, datasetId })
         if (cancelled) return
-
-        // --- Use DB quality flags ---
         const FLAG_ID_TO_CODE = { 0: 'ok', 1: 'out_of_range', 2: 'missing', 3: 'outlier' }
-
-        // Server now returns: ts, sampling_point, lat, lon, parameter, value, unit, quality_flag_id
         const rows = (res.data || []).map(r => {
           const flagId = r?.quality_flag_id == null ? null : Number(r.quality_flag_id)
           const parameterCode = String((r.parameter_code ?? r.parameter ?? '')).toLowerCase()
@@ -140,18 +122,15 @@ export default function App() {
         })
         setRawRows(rows)
 
-        // init filters (dates + points)
         const ts = rows.map(m => dayjs(m.timestamp)).filter(t => t.isValid())
         const min = ts.length ? dayjs.min(ts) : dayjs().subtract(30, 'day')
         const max = ts.length ? dayjs.max(ts) : dayjs()
         setDateFrom(min.format('YYYY-MM-DD'))
         setDateTo(max.format('YYYY-MM-DD'))
 
-        // select all points by default
         const pts = Array.from(new Set(rows.map(m => m.sampling_point_id).filter(Boolean)))
         setSelectedPoints(pts)
 
-        // sync selectedParams/primaryParam to what's actually in DB
         const paramsPresent = Array.from(new Set(rows.map(m => m.parameter).filter(Boolean)))
         if (paramsPresent.length) {
           if (paramsPresent.includes('temperature')) {
@@ -177,7 +156,6 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light')
   }, [darkMode])
 
-  // Synthesize sampling_points list (with lat/lon) for Filters/Map
   const samplingPointsList = useMemo(() => {
     const map = new Map()
     for (const m of rawRows) {
@@ -194,14 +172,12 @@ export default function App() {
     return Array.from(map.values())
   }, [rawRows])
 
-  // Available params from data (for dropdowns)
   const availableParams = useMemo(() => {
     const s = new Set(rawRows.map(r => r.parameter))
     const arr = Array.from(s)
     return arr.length ? arr : ['temperature','ph','dissolved_oxygen','turbidity','nitrate']
   }, [rawRows])
 
-  // Filtered rows for the table/KPIs (date + point + selected parameters)
   const filteredMeasurements = useMemo(() => {
     if (!rawRows.length) return []
     const start = dateFrom ? dayjs(dateFrom).startOf('day') : null
@@ -225,7 +201,6 @@ export default function App() {
       })
   }, [rawRows, dateFrom, dateTo, selectedPoints, selectedParams, tempUnit])
 
-  // Unfiltered rows (still convert temperature for consistency)
   const unfilteredMeasurements = useMemo(() => {
     return rawRows.map(m => {
       if (m.parameter === 'temperature') {
@@ -265,7 +240,6 @@ export default function App() {
     setPrimaryParam(params.includes('temperature') ? 'temperature' : (params[0] || 'temperature'))
   }
 
-  // --- Time series built from ALL rows (unfiltered) ---
   const seriesByParam = useMemo(() => {
     const map = {}
     unfilteredMeasurements.forEach(m => {
@@ -277,7 +251,6 @@ export default function App() {
     return map
   }, [unfilteredMeasurements])
 
-  // Sampling point stats for the cards (from ALL rows, always visible)
   const statsByPointAll = useMemo(() => {
     const byPoint = {}
     unfilteredMeasurements
@@ -298,20 +271,33 @@ export default function App() {
     return res
   }, [unfilteredMeasurements, primaryParam])
 
-  // KPIs based on DB flags
+  // NEW: status map for map markers ('safe' | 'warn' | 'unsafe')
+  const statusById = useMemo(() => {
+    const rank = { alert: 3, watch: 2, ok: 1, na: 0 }
+    const map = {}
+    for (const sp of samplingPointsList) {
+      let worstLevel = 'na'
+      for (const code of BLOOM_CODES) {
+        const last = latestForPointAndParam(unfilteredMeasurements, sp.id, code)
+        const lvl = pickLevelByCode(code, last?.value)?.level || 'na'
+        if (rank[lvl] > rank[worstLevel]) worstLevel = lvl
+      }
+      map[sp.id] = levelToSafety(worstLevel) // -> 'safe' | 'warn' | 'unsafe'
+    }
+    return map
+  }, [unfilteredMeasurements, samplingPointsList])
+
   const kpis = useMemo(() => {
     const total = filteredMeasurements.length
     const toId = (m) => m?.quality_flag_id == null ? null : Number(m.quality_flag_id)
-    const oks    = filteredMeasurements.filter(m => toId(m) === 0).length // OK
-    const warns  = filteredMeasurements.filter(m => toId(m) === 2).length // Missing
-    const alerts = filteredMeasurements.filter(m => toId(m) === 1).length // Out of range
+    const oks    = filteredMeasurements.filter(m => toId(m) === 0).length
+    const warns  = filteredMeasurements.filter(m => toId(m) === 2).length
+    const alerts = filteredMeasurements.filter(m => toId(m) === 1).length
 
     const tempVals = filteredMeasurements
       .filter(m => m.parameter === 'temperature' && m.value != null)
       .map(m => Number(m.value))
-    const meanTemp = tempVals.length
-      ? tempVals.reduce((a, b) => a + b, 0) / tempVals.length
-      : null
+    const meanTemp = tempVals.length ? tempVals.reduce((a, b) => a + b, 0) / tempVals.length : null
 
     return { total, oks, warns, alerts, meanTemp, tempUnit }
   }, [filteredMeasurements, tempUnit])
@@ -326,13 +312,12 @@ export default function App() {
     setSelectedPoints([pointId])
   }
 
-  // dailyAggregates not used currently
   const dailyAggregates = useMemo(() => [], [])
 
   const ctxValue = {
     rawData: { sampling_points: samplingPointsList, measurements: rawRows },
-    unfilteredMeasurements,                 // always-all rows (used by Algae Bloom Watch and cards)
-    filteredMeasurements,                   // table / KPIs
+    unfilteredMeasurements,
+    filteredMeasurements,
     dailyAggregates,
     spById,
     dateFrom, dateTo, selectedPoints, selectedParams, tempUnit,
@@ -343,14 +328,7 @@ export default function App() {
   const datasetToolbar = (
     datasets.length > 1 && (
       <div className="toolbar" style={{ padding: '8px 16px' }}>
-        {/* <label className="label" htmlFor="ds">Dataset</label>{' '} */}
-        {/* <select id="ds" value={datasetId} onChange={(e)=> setDatasetId(e.target.value)}>
-          {datasets.map(d => (
-            <option key={d.dataset_id} value={d.dataset_id}>
-              {d.file_name}{d.sheet_name ? ` (${d.sheet_name})` : ''} — {new Date(d.uploaded_at).toLocaleString()}
-            </option>
-          ))}
-        </select> */}
+        {/* dataset selector intentionally hidden here */}
       </div>
     )
   )
@@ -361,10 +339,7 @@ export default function App() {
     <div className="page page--center" role="alert">{error}</div>
   ) : (
     <Routes>
-      {/* Public */}
       <Route path="/login" element={<Login />} />
-
-      {/* Protected */}
       <Route
         path="/"
         element={
@@ -390,10 +365,8 @@ export default function App() {
               </aside>
 
               <main className="content" aria-live="polite">
-                {/* KPIs stay at the top */}
                 <KpiStrip kpis={kpis} />
 
-                {/* NEW: Map (left) + Sampling Points (right) in a single row */}
                 {SHOW_MAP && (
                   <section className="section">
                     <div
@@ -408,93 +381,63 @@ export default function App() {
                         <h2 className="section__title">Map</h2>
                         <MapView
                           points={samplingPointsList}
+                          statusById={statusById}   
                           onSelectPoint={handleSelectPoint}
                         />
                       </div>
 
                       {/* Right: Sampling Points */}
                       <div>
-                      <h2 className="section__title">Sampling Points</h2>
-                      <div
-                        className="card-grid"
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', // force 2 columns here
-                          gap: 12,
-                        }}
-                      >
-                        {samplingPointsList.map(sp => {
-                          const stats = statsByPointAll[sp.id]
-                          const latest = unfilteredMeasurements
-                            .filter(m => m.sampling_point_id === sp.id && m.parameter === primaryParam && m.value != null)
-                            .sort((a,b)=> new Date(b.timestamp) - new Date(a.timestamp))[0]
+                        <h2 className="section__title">Sampling Points</h2>
+                        <div
+                          className="card-grid"
+                          style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}
+                        >
+                          {samplingPointsList.map(sp => {
+                            const stats = statsByPointAll[sp.id]
+                            const latest = unfilteredMeasurements
+                              .filter(m => m.sampling_point_id === sp.id && m.parameter === primaryParam && m.value != null)
+                              .sort((a,b)=> new Date(b.timestamp) - new Date(a.timestamp))[0]
 
-                          const rank = { alert: 3, watch: 2, ok: 1, na: 0 }
-                          let worst = { level: 'na', code: null, msg: '—' }
-                          for (const code of BLOOM_CODES) {
-                            const last = latestForPointAndParam(unfilteredMeasurements, sp.id, code)
-                            const lvl  = pickLevelByCode(code, last?.value)
-                            if (rank[lvl.level] > rank[worst.level]) worst = { level: lvl.level, code, msg: lvl.msg }
-                          }
-                          const safety = levelToSafety(worst.level)
-                          const safetyHint = worst.code ? `${worst.code} · ${worst.msg}` : 'No recent readings'
+                            const rank = { alert: 3, watch: 2, ok: 1, na: 0 }
+                            let worst = { level: 'na', code: null, msg: '—' }
+                            for (const code of BLOOM_CODES) {
+                              const last = latestForPointAndParam(unfilteredMeasurements, sp.id, code)
+                              const lvl  = pickLevelByCode(code, last?.value)
+                              if (rank[lvl.level] > rank[worst.level]) worst = { level: lvl.level, code, msg: lvl.msg }
+                            }
+                            const safety = levelToSafety(worst.level)
+                            const safetyHint = worst.code ? `${worst.code} · ${worst.msg}` : 'No recent readings'
 
-                          return (
-                            <SamplingPointCard
-                              key={sp.id}
-                              name={sp.name}
-                              pointId={sp.id}
-                              latest={latest}
-                              unit={
-                                latest
-                                  ? latest.unit
-                                  : (primaryParam === 'temperature'
-                                        ? (tempUnit === 'C' ? '°C' : '°F')
-                                        : acceptableRanges[primaryParam]?.unit || '')
-                              }
-                              onClick={() => handleSelectPoint(sp.id)}
-                              safety={safety}
-                              safetyHint={safetyHint}
-                            />
-                          )
-                        })}
+                            return (
+                              <SamplingPointCard
+                                key={sp.id}
+                                name={sp.name}
+                                pointId={sp.id}
+                                latest={latest}
+                                unit={
+                                  latest
+                                    ? latest.unit
+                                    : (primaryParam === 'temperature'
+                                          ? (tempUnit === 'C' ? '°C' : '°F')
+                                          : acceptableRanges[primaryParam]?.unit || '')
+                                }
+                                onClick={() => handleSelectPoint(sp.id)}
+                                safety={safety}
+                                safetyHint={safetyHint}
+                              />
+                            )
+                          })}
+                        </div>
                       </div>
-                    </div>
                     </div>
                   </section>
                 )}
 
-                {/* Algae Bloom Watch moved BELOW the Map + Sampling Points row */}
                 <AlgaeBloomWatch />
 
-                {/* Time Series (unchanged) */}
-                {/* <section className="section">
-                  <div className="section__header">
-                    <h2 className="section__title">Time Series</h2>
-                    <div className="section__controls">
-                      <label className="label" htmlFor="primaryParam">Primary parameter:</label>
-                      <select
-                        id="primaryParam"
-                        className="select"
-                        value={primaryParam}
-                        onChange={e => setPrimaryParam(e.target.value)}
-                        aria-label="Primary parameter for sampling point cards"
-                      >
-                        {availableParams.map(p => (
-                          <option key={p} value={p}>{paramNameByCode[p] || p}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
+                {/* Time Series section currently hidden per your last edit */}
 
-                  <TimeSeriesChart
-                    seriesByParam={seriesByParam}
-                    tempUnit={tempUnit}
-                    focusParam={primaryParam}
-                  />
-                </section> */}
-
-                {/* Measurements Table (unchanged) */}
                 <section className="section">
                   <h2 className="section__title">Measurements Table</h2>
                   <ParameterTable
@@ -512,8 +455,6 @@ export default function App() {
       <Route path="/datasets" element={<ProtectedRoute user={user}><Datasets /></ProtectedRoute>} />
       <Route path="/parameters" element={<ProtectedRoute user={user}><Parameters /></ProtectedRoute>} />
       <Route path="/talk2csv" element={<ProtectedRoute user={user}><Talk2Csv /></ProtectedRoute>} />
-
-      {/* fallback: go to login if unauth, else dashboard */}
       <Route path="*" element={user ? <Navigate to="/" replace /> : <Navigate to="/login" replace />} />
     </Routes>
   )
@@ -522,7 +463,6 @@ export default function App() {
     <AuthContext.Provider value={{ user, login, logout }}>
       <FiltersContext.Provider value={ctxValue}>
         <div className="page">
-          {/* Hide header until logged in */}
           {user && (
             <Header
               title="Physical Water-Quality Monitoring"
