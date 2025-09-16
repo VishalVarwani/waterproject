@@ -44,13 +44,14 @@ from utils import allowed_file, json_error, content_sha256, clamp_preview
 settings = Settings()
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = settings.max_upload_mb * 1024 * 1024
-CORS(app, resources={r"/*": {"origins": settings.cors_origins}},
-    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+CORS(
+    app,
+    origins=settings.cors_origins,
+    supports_credentials=False,
     allow_headers=["Content-Type", "Authorization"],
-    expose_headers=[],
-    supports_credentials=False,  # set True only if you actually use cookies
-    max_age=86400,
-     )
+    methods=["GET", "POST", "OPTIONS"],
+    expose_headers=["Content-Type"]
+)
 
 # In-memory session cache for /ingest/map → /ingest/persist
 SESSION_CACHE: Dict[str, Dict[str, Any]] = {}
